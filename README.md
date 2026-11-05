@@ -11,8 +11,11 @@ et une interface graphique qui regroupe le tout.
 | `bureau-reglages.py` | Interface graphique « Personnalisation du bureau » (GTK 3) |
 | `bin/bureau-profil` | Enregistre ou applique un profil d'apparence complet |
 | `bin/bureau-wm` | Choix du gestionnaire de fenêtres : xfwm4 + picom ou Compiz |
-| `bin/fond-anime` | Fond d'écran animé à partir d'une vidéo (mpv + xwinwrap) |
-| `bin/fond-anime-icones` | Icônes du bureau affichées par-dessus le fond animé |
+| `bin/fond-anime` | Fond d'écran animé à partir d'une vidéo (mpv) |
+| `bin/fond-anime-video` | Fenêtre de la vidéo, gardée sous le bureau xfdesktop |
+| `bin/fond-anime-fond` | Masque le fond de xfdesktop (couleur rendue transparente par picom) et le remet |
+| `config/picom/fond-anime.glsl` | Shader picom qui laisse voir la vidéo derrière les icônes |
+| `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand picom ne tourne pas |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
 | `installer.sh` | Installe les commandes dans `~/.local/bin` et l'entrée du menu |
 | `fonds-animes/` | Vidéos proposées pour le fond animé (non versionnées) |

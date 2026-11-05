@@ -81,21 +81,37 @@ bureau-wm xfwm4
 
 ## `fond-anime` — fond d'écran animé
 
-Lit une vidéo en boucle, sans le son, à la place du fond d'écran : mpv joue la vidéo dans
-une fenêtre de type « bureau » créée par xwinwrap, sous toutes les applications. Comme elle
-cache les icônes de xfdesktop, `fond-anime-icones` les réaffiche par-dessus.
+Lit une vidéo en boucle, sans le son, à la place du fond d'écran.
 Aussi réglable depuis `bureau-reglages`, onglet **Fond animé** : un clic sur une vidéo
 la montre dans l'aperçu, un double-clic la met en fond d'écran.
+
+**Avec picom (mode xfwm4 + picom)**, la vidéo passe *sous* le vrai bureau : les icônes
+sont celles d'XFCE et s'utilisent normalement (déplacer, supprimer, renommer, créer un
+lanceur ou un dossier, glisser depuis Thunar, menu du clic droit). Pour ça :
+
+1. `fond-anime-video` ouvre la fenêtre de la vidéo tout en bas de l'écran, sous xfdesktop, et l'y garde ;
+2. `fond-anime-fond` remplace le fond de xfdesktop par une couleur unie, la couleur moyenne
+   de la vidéo (les bords des icônes et l'ombre de leurs noms s'y fondent), et garde le vrai
+   fond de côté ;
+3. picom rend cette couleur transparente (shader `fond-anime.glsl`), ce qui laisse voir la vidéo.
+   La règle ne s'applique que pendant le fond animé, quand la fenêtre du bureau porte la
+   propriété `_FOND_ANIME` : un fond d'écran normal n'est jamais touché.
+
+**Sans picom (mode Compiz)**, la vidéo recouvre le bureau et `fond-anime-icones` réaffiche les
+icônes par-dessus : elles s'ouvrent au double-clic mais ne se déplacent pas.
 
 | Commande | Effet |
 |---|---|
 | `fond-anime VIDEO.mp4` | Lance cette vidéo en fond d'écran et la mémorise |
 | `fond-anime` | Relance la dernière vidéo mémorisée (réaffiche aussi les icônes) |
 | `fond-anime stop` | Arrête le fond animé : le fond d'écran normal réapparaît |
+| `fond-anime actualiser` | Replace le fond animé dans le bon mode (fait tout seul après un changement de profil, de gestionnaire de fenêtres ou de picom) |
 | `fond-anime auto on` | Lance le fond animé à chaque ouverture de session |
 | `fond-anime auto off` | Ne le lance plus au démarrage |
 | `fond-anime --help` | Affiche l'aide |
-| `pgrep -af fond-anime-mpv` | Vérifie s'il tourne (aucune ligne = arrêté) |
+| `pgrep -af "^mpv .*fond-anime-mpv"` | Vérifie s'il tourne (aucune ligne = arrêté) |
+| `fond-anime-fond etat` | Dit si le fond de xfdesktop est masqué (`masqué`) ou normal |
+| `fond-anime-fond restaurer` | Remet le vrai fond d'écran si le bureau reste noir sans vidéo |
 
 Les vidéos à utiliser se rangent dans le dossier **`fonds-animes/`** de ce projet
 (`~/Documents/PROJET/XfcePersonnaliser/fonds-animes/`). Il suffit d'y copier une vidéo
@@ -115,13 +131,14 @@ fond-anime stop
 fond-anime auto off
 ```
 
-Icônes par-dessus la vidéo : double-clic pour ouvrir ; clic droit sur le vide pour
-« Ouvrir le dossier Bureau », « Ouvrir un terminal ici » ou « Actualiser ».
-
-> Tant qu'il tourne, il recouvre le fond d'écran choisi dans un profil ou dans `bureau-reglages`.
-> picom ne lui met ni ombre, ni coins arrondis, ni animation (règle `fond-anime-mpv` dans `picom.conf`).
-> Dépendances : `mpv`, `xwinwrap` (`~/.local/bin/xwinwrap`) et `xrandr` ; `ffmpeg` / `ffprobe`
-> pour les miniatures et les durées affichées dans l'onglet.
+> Tant qu'il tourne, il recouvre le fond d'écran choisi dans un profil ou dans `bureau-reglages` ;
+> `fond-anime stop` le remet. Un profil enregistré pendant le fond animé garde le vrai fond d'écran.
+> Si la session se ferme pendant le fond animé, le fond d'écran est remis à l'ouverture suivante
+> (entrée `fond-anime-nettoyage.desktop`, créée et retirée toute seule).
+> La règle de picom et le shader sont ajoutés tout seuls à `~/.config/picom/` s'ils manquent
+> (par exemple après le chargement d'un ancien profil).
+> Dépendances : `mpv`, `xrandr`, `xwinwrap` (`~/.local/bin/xwinwrap`, pour le mode Compiz) ;
+> `ffmpeg` / `ffprobe` pour les miniatures et les durées affichées dans l'onglet.
 
 ---
 
@@ -148,7 +165,7 @@ Retoucher le style : `/usr/share/themes/Catppuccin-Mocha-Greeter/gtk-3.0/gtk.css
 | Commande | Effet |
 |---|---|
 | `ccsm` | Panneau de réglages de Compiz (effets, durées, raccourcis…) |
-| `xfce4-panel -r` | Relance les panneaux (si le dock est mal placé) |
+| `xfce4-panel -r` | Relance les panneaux (si le dock est mal placé, ou s'il ne réapparaît qu'en passant la souris en haut de l'écran) |
 | `xfwm4 --replace &` | Relance le gestionnaire de fenêtres d'XFCE |
 | `picom &` | Relance picom (mode xfwm4 uniquement) |
 
@@ -190,7 +207,10 @@ sudo apt install mpv   # fond animé
 | Élément | Chemin |
 |---|---|
 | Scripts | `bin/bureau-profil`, `bin/bureau-wm` (ce dossier), liens dans `~/.local/bin/` |
-| Fond animé (programmes) | `bin/fond-anime`, `bin/fond-anime-icones` (ce dossier), liens dans `~/.local/bin/` ; `~/.local/bin/xwinwrap` |
+| Fond animé (programmes) | `bin/fond-anime`, `bin/fond-anime-video`, `bin/fond-anime-fond`, `bin/fond-anime-icones` (ce dossier), liens dans `~/.local/bin/` ; `~/.local/bin/xwinwrap` |
+| Fond animé (shader picom) | `config/picom/fond-anime.glsl` (ce dossier), copié dans `~/.config/picom/` |
+| Fond animé (vrai fond gardé de côté) | `~/.config/fond-anime/fond-xfdesktop.json` (pendant la vidéo) |
+| Sauvegarde d'avant le passage sous le bureau | `~/.config/fond-anime/sauvegarde-avant-vrai-bureau/` (`picom.conf`, fond de xfdesktop) |
 | Installation des liens et du menu | `installer.sh` (ce dossier) |
 | Fond animé (vidéo mémorisée, PID) | `~/.config/fond-anime/video`, `~/.config/fond-anime/pid` |
 | Vidéos du fond animé | `fonds-animes/` (ce dossier) — les originaux sont restés dans `~/Videos/FOND_ECRAN/` |
@@ -206,5 +226,5 @@ sudo apt install mpv   # fond animé
 | Config picom | `~/.config/picom/picom.conf` |
 | Style du Alt+Tab | `~/.config/gtk-3.0/gtk.css` |
 | Config Compiz | `~/.config/compiz/compizconfig/Default.ini` |
-| Démarrage automatique | `~/.config/autostart/picom.desktop`, `compiz.desktop`, `fond-anime.desktop` |
+| Démarrage automatique | `~/.config/autostart/picom.desktop` (relance aussi le panneau 4 s après picom, sinon la zone de survol du dock reste en haut à gauche), `compiz.desktop`, `fond-anime.desktop`, `fond-anime-nettoyage.desktop` (seulement pendant le fond animé) |
 | Sauvegarde de la config d'origine | `~/.config/xfce4-backup-20261104-084020/` |
