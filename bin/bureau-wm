@@ -5,6 +5,7 @@
 #   bureau-wm theme    recale la décoration Compiz sur le thème actuel
 #   bureau-wm          affiche le mode actuel
 set -euo pipefail
+ICI="$(dirname "$(realpath "$0")")"
 
 # Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
 cd "$HOME"
@@ -66,11 +67,15 @@ case "${1:-}" in
         echo compiz > "$MODE_FILE"
         autostart compiz true; autostart picom false
         start_compiz
+        # Sans picom, le fond animé repasse au-dessus du bureau (icônes en lecture seule)
+        "$ICI/fond-anime" actualiser >/dev/null 2>&1 || true
         echo "Compiz activé (aussi au prochain démarrage)" ;;
     xfwm4)
         echo xfwm4 > "$MODE_FILE"
         autostart compiz false; autostart picom true
         start_xfwm4
+        # Avec picom, le fond animé repasse sous le vrai bureau
+        "$ICI/fond-anime" actualiser >/dev/null 2>&1 || true
         echo "xfwm4 + picom activés (aussi au prochain démarrage)" ;;
     theme)
         sync_theme ;;

@@ -68,9 +68,12 @@ for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
 setsid -f xfce4-panel >/dev/null 2>&1
 """
 RELANCE_PICOM = "pkill -x picom; sleep 0.3; setsid -f picom >/dev/null 2>&1"
-# picom et le compositeur intégré d'xfwm4 ne peuvent pas tourner ensemble
-PICOM_ON = "xfconf-query -c xfwm4 -p /general/use_compositing -s false; " + RELANCE_PICOM
-PICOM_OFF = "pkill -x picom; sleep 0.3; xfconf-query -c xfwm4 -p /general/use_compositing -s true"
+# picom et le compositeur intégré d'xfwm4 ne peuvent pas tourner ensemble. Le fond animé
+# change de mode avec picom (vidéo sous le vrai bureau, ou par-dessus sans picom)
+SUIVRE_FOND_ANIME = "; fond-anime actualiser >/dev/null 2>&1 || true"
+PICOM_ON = "xfconf-query -c xfwm4 -p /general/use_compositing -s false; " + RELANCE_PICOM + SUIVRE_FOND_ANIME
+PICOM_OFF = ("pkill -x picom; sleep 0.3; xfconf-query -c xfwm4 -p /general/use_compositing -s true"
+             + SUIVRE_FOND_ANIME)
 
 CSS = b"""
 .barre-laterale { background-color: alpha(currentColor, 0.04); border-right: 1px solid alpha(currentColor, 0.1); }
@@ -348,7 +351,8 @@ class Etat:
         self.alttab = "xfwm-tabwin" in lire(ALTTAB_CSS)
         self.alttab_dispo = self.alttab or os.path.exists(ALTTAB_OFF)
         self.greeter = bool(re.search(rf"^theme-name\s*=\s*{GREETER_THEME}\s*$", lire(GREETER_CONF), re.M))
-        self.fond_anime = processus("-f", "fond-anime-mpv")
+        self.fond_anime = processus("-f", "^mpv .*fond-anime-mp[v]")
+        self.fond_anime_bureau = processus("-f", "^python3 [^ ]*/fond-anime-vide[o] ")  # vidéo sous le bureau
         self.fond_anime_auto = autostart_actif("fond-anime", False)
         self.video = lire(VIDEO_ANIMEE).strip()
         self.videos = videos_disponibles()
@@ -988,7 +992,9 @@ class Fenetre(Gtk.ApplicationWindow):
         self.switch_anime_auto.set_active(e.fond_anime_auto)
         nom = os.path.basename(e.video) if e.video else ""
         if e.fond_anime:
-            texte = f"Lancé avec « {nom} »."
+            icones = ("icônes du bureau utilisables normalement" if e.fond_anime_bureau
+                      else "icônes en lecture seule, car picom ne tourne pas")
+            texte = f"Lancé avec « {nom} » : {icones}."
         elif nom:
             texte = f"Arrêté. À l'activation : « {nom} »."
         else:

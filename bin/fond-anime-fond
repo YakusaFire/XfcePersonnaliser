@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+# fond-anime-fond : masque le fond d'écran de xfdesktop pendant le fond animé.
+# Le fond devient une couleur unie (la couleur moyenne de la vidéo) que picom rend
+# transparente (shader fond-anime.glsl, actif tant que la fenêtre du bureau porte la
+# propriété _FOND_ANIME) : la vidéo, placée sous le bureau, apparaît derrière les icônes.
+#
+#   fond-anime-fond masquer [RRGGBB]  garde le fond actuel de côté et pose la couleur
+#   fond-anime-fond restaurer         remet le fond gardé de côté
+#   fond-anime-fond corriger FICHIER  remet le fond gardé dans une copie de
+#                                     xfce4-desktop.xml (pour bureau-profil save)
+#   fond-anime-fond etat              affiche « masqué » ou « normal »
+
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+SAUVEGARDE = os.path.expanduser("~/.config/fond-anime/fond-xfdesktop.json")
+CLE_DEFAUT = [1 / 255, 2 / 255, 3 / 255, 1.0]
+DEFAUT = {"rgba1": None, "color-style": 0, "image-style": 5}  # fond masqué sans sauvegarde
+REGLAGES = ("rgba1", "color-style", "image-style")  # image-style en dernier : l'image ne
+#                                                     disparaît qu'une fois la couleur en place
+C = dict(os.environ, LC_ALL="C")  # nombres avec un point décimal
+
+
+def xfconf(*args, canal="xfce4-desktop"):
+    return subprocess.run(["xfconf-query", "-c", canal, *args], capture_output=True, text=True, env=C)
+
+
+def emplacements():
+    """Préfixes /backdrop/screenN/monitorX/workspaceN de tous les écrans et espaces de travail."""
+    trouves = set()
+    for prop in xfconf("-l").stdout.split():
+        m = re.match(r"(/backdrop/screen\d+/monitor[^/]+)/workspace(\d+)/", prop)
+        if m:
+            trouves.add((m.group(1), int(m.group(2))))
+    nb = xfconf("-p", "/general/workspace_count", canal="xfwm4").stdout.strip()
+    nb = int(nb) if nb.isdigit() else 1
+    ecrans = {e for e, _ in trouves}
+    return sorted({f"{e}/workspace{n}" for e, n in trouves} | {f"{e}/workspace{n}" for e in ecrans for n in range(nb)})
+
+
+def lire(prop):
+    """int, liste de nombres (rgba1) ou None si la propriété n'existe pas."""
+    r = xfconf("-p", prop)
+    lignes = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+    if r.returncode or not lignes:
+        return None
+    if lignes[0].startswith("Value is an array"):
+        return [float(v) for v in lignes[1:]]
+    try:
+        return int(lignes[0])
+    except ValueError:
+        return None
+
+
+def ecrire(prop, valeur):
+    if valeur is None:
+        xfconf("-p", prop, "-r")
+    elif isinstance(valeur, list):
+        args = [*["-t", "double"] * len(valeur), *[a for v in valeur for a in ("-s", repr(float(v)))]]
+        if xfconf("-p", prop, *args).returncode:
+            xfconf("-p", prop, "-n", *args)
+    elif xfconf("-p", prop, "-s", str(valeur)).returncode:
+        xfconf("-p", prop, "-n", "-t", "int", "-s", str(valeur))
+
+
+def valeurs(prefixe):
+    return {cle: lire(f"{prefixe}/{cle}") for cle in REGLAGES}
+
+
+def est_masque(v, cle):
+    couleur = v.get("rgba1")
+    return (v.get("image-style") == 0 and isinstance(couleur, list) and len(couleur) == 4
+            and all(abs(a - b) < 1e-4 for a, b in zip(couleur, cle)))
+
+
+def charger():
+    """(couleur de masquage, vrais fonds par préfixe) ; accepte l'ancien format sans couleur."""
+    try:
+        with open(SAUVEGARDE, encoding="utf-8") as f:
+            donnees = json.load(f)
+    except (OSError, ValueError):
+        return CLE_DEFAUT, {}
+    if "fonds" in donnees:
+        return donnees.get("cle", CLE_DEFAUT), donnees["fonds"]
+    return CLE_DEFAUT, donnees
+
+
+def fenetres_bureau():
+    """Fenêtres « Desktop » de xfdesktop (une par écran)."""
+    arbre = subprocess.run(["xwininfo", "-root", "-tree"], capture_output=True, text=True).stdout
+    return [m.group(1) for m in re.finditer(r'^\s*(0x[0-9a-f]+) .*\("xfdesktop" "Xfdesktop"\)\s+(\d+)x\d+',
+                                           arbre, re.M) if int(m.group(2)) >= 320]
+
+
+def marquer(actif):
+    """La propriété _FOND_ANIME active la règle picom (shader) sur la fenêtre du bureau."""
+    for fenetre in fenetres_bureau():
+        if actif:
+            subprocess.run(["xprop", "-id", fenetre, "-f", "_FOND_ANIME", "32c", "-set", "_FOND_ANIME", "1"])
+        else:
+            subprocess.run(["xprop", "-id", fenetre, "-remove", "_FOND_ANIME"])
+
+
+def masquer(couleur=None):
+    ancienne_cle, garde = charger()
+    cle = [int(couleur[i:i + 2], 16) / 255 for i in (0, 2, 4)] + [1.0] if couleur else CLE_DEFAUT
+    actuels = {p: valeurs(p) for p in emplacements()}
+    for prefixe, v in actuels.items():
+        if not est_masque(v, ancienne_cle) and not est_masque(v, cle):  # sinon : vrai fond déjà gardé
+            garde[prefixe] = v
+    os.makedirs(os.path.dirname(SAUVEGARDE), exist_ok=True)
+    with open(SAUVEGARDE, "w", encoding="utf-8") as f:
+        json.dump({"cle": cle, "fonds": garde}, f, indent=1)
+    masque = {"rgba1": cle, "color-style": 0, "image-style": 0}
+    for prefixe, v in actuels.items():
+        if not est_masque(v, cle):
+            for nom in REGLAGES:
+                ecrire(f"{prefixe}/{nom}", masque[nom])
+    time.sleep(0.5)  # xfdesktop a redessiné son fond avant que picom le rende transparent
+    marquer(True)
+
+
+def restaurer():
+    marquer(False)
+    cle, garde = charger()
+    for prefixe in sorted(set(emplacements()) | set(garde)):
+        v = garde.get(prefixe)
+        if v is None:
+            if not est_masque(valeurs(prefixe), cle):
+                continue
+            v = DEFAUT
+        for nom in REGLAGES:
+            ecrire(f"{prefixe}/{nom}", v.get(nom))
+    if os.path.exists(SAUVEGARDE):
+        os.remove(SAUVEGARDE)
+
+
+def corriger(fichier):
+    """Remplace la couleur de masquage par le vrai fond dans un xfce4-desktop.xml enregistré."""
+    _, garde = charger()
+    if not garde:
+        return
+    arbre = ET.parse(fichier)
+    for prefixe, v in garde.items():
+        noeud = arbre.getroot()
+        for nom in prefixe.strip("/").split("/"):
+            enfant = next((p for p in noeud.findall("property") if p.get("name") == nom), None)
+            if enfant is None:
+                enfant = ET.SubElement(noeud, "property", name=nom, type="empty")
+            noeud = enfant
+        for nom, valeur in v.items():
+            for ancien in [p for p in noeud.findall("property") if p.get("name") == nom]:
+                noeud.remove(ancien)
+            if isinstance(valeur, list):
+                tableau = ET.SubElement(noeud, "property", name=nom, type="array")
+                for x in valeur:
+                    ET.SubElement(tableau, "value", type="double", value=repr(x))
+            elif valeur is not None:
+                ET.SubElement(noeud, "property", name=nom, type="int", value=str(valeur))
+    ET.indent(arbre, space="  ")
+    with open(fichier, "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n\n')
+        f.write(ET.tostring(arbre.getroot(), encoding="unicode") + "\n")
+
+
+def etat():
+    cle, _ = charger()
+    print("masqué" if any(est_masque(valeurs(p), cle) for p in emplacements()) else "normal")
+
+
+if __name__ == "__main__":
+    commande = sys.argv[1:2]
+    if commande == ["masquer"] and len(sys.argv) <= 3:
+        couleur = sys.argv[2] if len(sys.argv) == 3 else None
+        if couleur and not re.fullmatch(r"[0-9a-fA-F]{6}", couleur):
+            sys.exit(f"Couleur invalide : {couleur} (attendu : RRGGBB)")
+        masquer(couleur)
+    elif commande == ["restaurer"]:
+        restaurer()
+    elif commande == ["corriger"] and len(sys.argv) == 3:
+        corriger(sys.argv[2])
+    elif commande == ["etat"]:
+        etat()
+    else:
+        sys.exit("Usage : fond-anime-fond masquer [RRGGBB] | restaurer | corriger FICHIER | etat")

@@ -4,6 +4,7 @@
 #   bureau-profil load <nom>   remet un profil enregistré
 #   bureau-profil list         liste les profils
 set -euo pipefail
+ICI="$(dirname "$(realpath "$0")")"
 
 # Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
 cd "$HOME"
@@ -30,6 +31,12 @@ save() {
     for c in "${CHANNELS[@]}"; do
         [ -f "$XML/$c.xml" ] && cp "$XML/$c.xml" "$p/xfconf/"
     done
+    # Pendant le fond animé, le fond de xfdesktop est une couleur de masquage :
+    # le profil garde le vrai fond d'écran
+    if [ -f "$p/xfconf/xfce4-desktop.xml" ]; then
+        "$ICI/fond-anime-fond" corriger "$p/xfconf/xfce4-desktop.xml" ||
+            echo "Attention : le fond d'écran du profil n'a pas pu être corrigé"
+    fi
     for e in "${EXTRA[@]}"; do
         [ -e "$HOME/.config/$e" ] || continue
         mkdir -p "$p/config/$(dirname "$e")"
@@ -81,6 +88,8 @@ load() {
     fi
     xfce4-panel &>/dev/null & disown
     xfdesktop --reload &>/dev/null || true
+    # Le profil remet son fond d'écran : le fond animé, s'il tourne, repasse derrière les icônes
+    "$ICI/fond-anime" actualiser &>/dev/null || true
     echo "Profil « $1 » appliqué (ancien état gardé dans « _avant-load »)"
 }
 

@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+# fond-anime-video : fenêtre de la vidéo du fond animé, tout en bas de l'écran, sous le
+# bureau xfdesktop dont picom rend le fond transparent (xwinwrap -ov, lui, se glisse
+# dans la fenêtre du bureau et cache les icônes).
+# Comme xwinwrap, elle lance le lecteur en remplaçant WID par l'identifiant de la fenêtre :
+#   fond-anime-video LxH+X+Y -- mpv -wid WID … VIDEO
+# La fenêtre reste sous le bureau et se ferme quand le lecteur s'arrête.
+
+import ctypes
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from ctypes import POINTER, byref, c_char_p, c_int, c_long, c_uint, c_ulong, c_void_p
+
+x11 = ctypes.CDLL("libX11.so.6")
+x11.XOpenDisplay.argtypes = [c_char_p]
+x11.XOpenDisplay.restype = c_void_p
+x11.XDefaultRootWindow.argtypes = [c_void_p]
+x11.XDefaultRootWindow.restype = c_ulong
+x11.XQueryTree.argtypes = [c_void_p, c_ulong, POINTER(c_ulong), POINTER(c_ulong),
+                           POINTER(POINTER(c_ulong)), POINTER(c_uint)]
+for nom in ("XLowerWindow", "XMapWindow", "XDestroyWindow"):
+    getattr(x11, nom).argtypes = [c_void_p, c_ulong]
+x11.XFlush.argtypes = [c_void_p]
+x11.XFree.argtypes = [c_void_p]
+x11.XCloseDisplay.argtypes = [c_void_p]
+x11.XStoreName.argtypes = [c_void_p, c_ulong, c_char_p]
+
+
+class XSetWindowAttributes(ctypes.Structure):
+    _fields_ = [("background_pixmap", c_ulong), ("background_pixel", c_ulong), ("border_pixmap", c_ulong),
+                ("border_pixel", c_ulong), ("bit_gravity", c_int), ("win_gravity", c_int),
+                ("backing_store", c_int), ("backing_planes", c_ulong), ("backing_pixel", c_ulong),
+                ("save_under", c_int), ("event_mask", c_long), ("do_not_propagate_mask", c_long),
+                ("override_redirect", c_int), ("colormap", c_ulong), ("cursor", c_ulong)]
+
+
+class XClassHint(ctypes.Structure):
+    _fields_ = [("res_name", c_char_p), ("res_class", c_char_p)]
+
+
+x11.XCreateWindow.argtypes = [c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_uint, c_int, c_uint,
+                              c_void_p, c_ulong, POINTER(XSetWindowAttributes)]
+x11.XCreateWindow.restype = c_ulong
+x11.XSetClassHint.argtypes = [c_void_p, c_ulong, POINTER(XClassHint)]
+CW_BACK_PIXEL, CW_OVERRIDE_REDIRECT, INPUT_OUTPUT = 1 << 1, 1 << 9, 1
+
+# Une fenêtre peut disparaître entre deux appels : on ignore l'erreur au lieu de quitter
+GESTIONNAIRE = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)(lambda _d, _e: 0)
+x11.XSetErrorHandler.argtypes = [c_void_p]
+x11.XSetErrorHandler(ctypes.cast(GESTIONNAIRE, c_void_p))
+
+# Le lecteur reçoit SIGTERM si cette fenêtre disparaît brutalement
+AVEC_PARENT = ["setpriv", "--pdeathsig", "TERM"] if shutil.which("setpriv") else []
+
+
+def tout_en_bas(dpy, racine, fenetre):
+    racine_, parent, n = c_ulong(), c_ulong(), c_uint()
+    liste = POINTER(c_ulong)()
+    if not x11.XQueryTree(dpy, racine, byref(racine_), byref(parent), byref(liste), byref(n)):
+        return True
+    bas = liste[0] if n.value else fenetre
+    x11.XFree(liste)
+    return bas == fenetre
+
+
+def main():
+    args = sys.argv[1:]
+    geometrie = re.fullmatch(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", args[0]) if args else None
+    if not geometrie or len(args) < 3 or args[1] != "--":
+        sys.exit("Usage : fond-anime-video LxH+X+Y -- LECTEUR … WID …")
+    largeur, hauteur, x, y = map(int, geometrie.groups())
+
+    dpy = x11.XOpenDisplay(None)
+    if not dpy:
+        sys.exit("fond-anime-video : pas d'affichage X")
+    racine = x11.XDefaultRootWindow(dpy)
+    attributs = XSetWindowAttributes(background_pixel=0, override_redirect=1)
+    fenetre = x11.XCreateWindow(dpy, racine, x, y, largeur, hauteur, 0, 0, INPUT_OUTPUT, None,
+                                CW_BACK_PIXEL | CW_OVERRIDE_REDIRECT, byref(attributs))
+    # Classe reprise par la règle picom du fond animé : ni ombre, ni arrondi, ni animation
+    x11.XSetClassHint(dpy, fenetre, byref(XClassHint(b"fond-anime-video", b"fond-anime-mpv")))
+    x11.XStoreName(dpy, fenetre, b"fond-anime")
+    x11.XLowerWindow(dpy, fenetre)  # abaissée avant d'apparaître : jamais au-dessus du bureau
+    x11.XMapWindow(dpy, fenetre)
+    x11.XFlush(dpy)
+
+    commande = [hex(fenetre) if a == "WID" else a for a in args[2:]]
+    lecteur = subprocess.Popen(AVEC_PARENT + commande, stdin=subprocess.DEVNULL)
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, lambda *_: lecteur.terminate())
+    while lecteur.poll() is None:
+        if not tout_en_bas(dpy, racine, fenetre):
+            x11.XLowerWindow(dpy, fenetre)
+            x11.XFlush(dpy)
+        time.sleep(1)
+    x11.XDestroyWindow(dpy, fenetre)
+    x11.XCloseDisplay(dpy)
+
+
+if __name__ == "__main__":
+    main()
