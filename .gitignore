@@ -4,3 +4,6 @@ fonds-animes/*
 
 __pycache__/
 *.pyc
+
+# Notes de travail pour Claude Code, gardées en local
+CLAUDE.md
