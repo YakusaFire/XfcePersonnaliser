@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# fond-anime : fond d'écran animé à partir d'une vidéo (XFCE / X11)
+# Dépendances : mpv, xwinwrap (~/.local/bin/xwinwrap), xrandr
+#
+#   fond-anime VIDEO.mp4     lance la vidéo en fond d'écran (et la mémorise)
+#   fond-anime               relance la dernière vidéo mémorisée
+#   fond-anime stop          arrête le fond animé
+#   fond-anime auto on|off   active / désactive le lancement à l'ouverture de session
+
+set -u
+CONF_DIR="$HOME/.config/fond-anime"
+SAVED="$CONF_DIR/video"
+PIDFILE="$CONF_DIR/pid"
+AUTOSTART="$HOME/.config/autostart/fond-anime.desktop"
+XWINWRAP="$(command -v xwinwrap || echo "$HOME/.local/bin/xwinwrap")"
+
+mkdir -p "$CONF_DIR"
+
+stop() {
+    if [[ -f "$PIDFILE" ]]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    # au cas où une instance aurait été lancée hors du script
+    pkill -f "xwinwrap .*fond-anime-mpv" 2>/dev/null
+    pkill -f "python3 .*fond-anime-icones" 2>/dev/null
+    return 0
+}
+
+start() {
+    local video="$1"
+    if [[ ! -f "$video" ]]; then
+        echo "Vidéo introuvable : $video" >&2; exit 1
+    fi
+    if ! command -v mpv >/dev/null; then
+        echo "mpv n'est pas installé. Lance : sudo apt install mpv" >&2; exit 1
+    fi
+    if [[ ! -x "$XWINWRAP" ]]; then
+        echo "xwinwrap introuvable ($XWINWRAP)" >&2; exit 1
+    fi
+
+    stop
+    realpath "$video" > "$SAVED"
+
+    # taille totale de l'écran (tous moniteurs confondus)
+    local geom
+    geom="$(xrandr | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p')+0+0"
+
+    # -fdt : fenêtre de type "bureau" (sous toutes les applis, au-dessus du fond XFCE)
+    "$XWINWRAP" -g "$geom" -fdt -b -s -st -sp -nf -ni -un -- \
+        mpv -wid WID \
+            --x11-name=fond-anime-mpv \
+            --loop-file=inf \
+            --no-audio \
+            --panscan=1.0 \
+            --hwdec=auto-safe \
+            --no-osc --no-osd-bar --osd-level=0 \
+            --no-input-default-bindings --input-vo-keyboard=no \
+            --cursor-autohide=no \
+            --stop-screensaver=no \
+            --really-quiet \
+            "$(cat "$SAVED")" \
+        >/dev/null 2>&1 &
+    echo $! > "$PIDFILE"
+    disown
+
+    # la vidéo cache les icônes de xfdesktop : on les réaffiche par-dessus
+    (sleep 1; exec python3 "$HOME/.local/bin/fond-anime-icones") >/dev/null 2>&1 &
+    disown
+    echo "Fond animé lancé : $(cat "$SAVED")"
+}
+
+autostart() {
+    case "${1:-}" in
+        on)
+            mkdir -p "$(dirname "$AUTOSTART")"
+            cat > "$AUTOSTART" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Fond d'écran animé
+Exec=sh -c "sleep 3; $HOME/.local/bin/fond-anime"
+X-GNOME-Autostart-enabled=true
+EOF
+            echo "Démarrage automatique activé." ;;
+        off)
+            rm -f "$AUTOSTART"
+            echo "Démarrage automatique désactivé." ;;
+        *)
+            echo "Usage : fond-anime auto on|off" >&2; exit 1 ;;
+    esac
+}
+
+case "${1:-}" in
+    stop)  stop; echo "Fond animé arrêté." ;;
+    auto)  autostart "${2:-}" ;;
+    -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' ;;
+    "")
+        if [[ -f "$SAVED" ]]; then start "$(cat "$SAVED")"
+        else echo "Aucune vidéo mémorisée. Usage : fond-anime VIDEO.mp4" >&2; exit 1; fi ;;
+    *)     start "$1" ;;
+esac

@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+# fond-anime-icones : couche transparente qui affiche les icônes du bureau
+# par-dessus le fond animé (xfdesktop est opaque et se retrouve caché).
+# Double-clic : ouvrir.  Clic droit sur le vide : menu.
+
+import os
+import subprocess
+
+import gi
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gtk, Gdk, Gio, GLib, Pango
+
+ICON_SIZE = 48
+CELL_W, CELL_H = 96, 92
+MARGIN = 12
+
+CSS = b"""
+window, flowbox, flowboxchild { background: transparent; }
+.item { padding: 4px; border-radius: 6px; }
+.item:hover { background: rgba(255,255,255,0.15); }
+.item.selected { background: rgba(80,140,255,0.45); }
+.item label {
+    color: white;
+    text-shadow: 1px 1px 2px black, 0 0 3px black;
+}
+"""
+
+
+def desktop_dir():
+    d = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DESKTOP)
+    return d or os.path.expanduser("~/Desktop")
+
+
+class Item(Gtk.EventBox):
+    def __init__(self, label, gicon, on_open):
+        super().__init__()
+        self.on_open = on_open
+        self.set_visible_window(False)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        box.get_style_context().add_class("item")
+        box.set_size_request(CELL_W - 8, CELL_H - 8)
+        self.box = box
+
+        img = Gtk.Image.new_from_gicon(gicon, Gtk.IconSize.DIALOG)
+        img.set_pixel_size(ICON_SIZE)
+        lbl = Gtk.Label(label=label)
+        lbl.set_line_wrap(True)
+        lbl.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+        lbl.set_lines(2)
+        lbl.set_ellipsize(Pango.EllipsizeMode.END)
+        lbl.set_max_width_chars(12)
+        lbl.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(img, False, False, 0)
+        box.pack_start(lbl, False, False, 0)
+        self.add(box)
+        self.set_tooltip_text(label)
+        self.connect("button-press-event", self._press)
+
+    def _press(self, _w, ev):
+        if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS:
+            self.get_toplevel().select(self)
+        elif ev.button == 1 and ev.type == Gdk.EventType._2BUTTON_PRESS:
+            self.on_open()
+        return True
+
+
+class IconLayer(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="fond-anime-icones")
+        self.set_wmclass("fond-anime-icones", "fond-anime-icones")
+        self.set_type_hint(Gdk.WindowTypeHint.DESKTOP)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.stick()
+        self.set_keep_below(True)
+
+        screen = self.get_screen()
+        visual = screen.get_rgba_visual()
+        if visual:
+            self.set_visual(visual)
+        self.set_app_paintable(True)
+
+        prov = Gtk.CssProvider()
+        prov.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(
+            screen, prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        mon = Gdk.Display.get_default().get_primary_monitor() or \
+            Gdk.Display.get_default().get_monitor(0)
+        geo = mon.get_workarea()
+        self.move(geo.x, geo.y)
+        self.set_default_size(geo.width, geo.height)
+        self.rows = max(1, (geo.height - 2 * MARGIN) // CELL_H)
+
+        self.grid = Gtk.Grid()
+        self.grid.set_margin_top(MARGIN)
+        self.grid.set_margin_start(MARGIN)
+        ev = Gtk.EventBox()
+        ev.set_visible_window(False)
+        ev.add(self.grid)
+        ev.connect("button-press-event", self._bg_press)
+        self.add(ev)
+
+        self.selected = None
+        self.desk = Gio.File.new_for_path(desktop_dir())
+        self.monitor = self.desk.monitor_directory(Gio.FileMonitorFlags.NONE, None)
+        self.monitor.connect("changed", lambda *a: self._schedule_reload())
+        self._reload_id = None
+        self.reload()
+
+    # ---------- contenu ----------
+    def entries(self):
+        yield ("Dossier personnel", Gio.ThemedIcon.new("user-home"),
+               lambda: self.open_uri(GLib.filename_to_uri(os.path.expanduser("~"))))
+        yield ("Système de fichiers", Gio.ThemedIcon.new("drive-harddisk"),
+               lambda: self.open_uri("file:///"))
+        yield ("Corbeille", Gio.ThemedIcon.new("user-trash"),
+               lambda: self.open_uri("trash:///"))
+
+        try:
+            it = self.desk.enumerate_children(
+                "standard::name,standard::display-name,standard::icon,standard::is-hidden",
+                Gio.FileQueryInfoFlags.NONE, None)
+        except GLib.Error:
+            return
+        files = sorted((i for i in it if not i.get_is_hidden()),
+                       key=lambda i: i.get_display_name().lower())
+        for info in files:
+            f = self.desk.get_child(info.get_name())
+            path = f.get_path()
+            label, icon = info.get_display_name(), info.get_icon()
+            if path.endswith(".desktop"):
+                app = Gio.DesktopAppInfo.new_from_filename(path)
+                if app:
+                    label = app.get_display_name() or label
+                    icon = app.get_icon() or icon
+                    yield (label, icon, lambda a=app: self.launch_app(a))
+                    continue
+            yield (label, icon, lambda u=f.get_uri(): self.open_uri(u))
+
+    def _schedule_reload(self):
+        if self._reload_id:
+            GLib.source_remove(self._reload_id)
+        self._reload_id = GLib.timeout_add(300, self.reload)
+
+    def reload(self):
+        self._reload_id = None
+        self.selected = None
+        for c in self.grid.get_children():
+            self.grid.remove(c)
+        for n, (label, icon, cb) in enumerate(self.entries()):
+            item = Item(label, icon or Gio.ThemedIcon.new("text-x-generic"), cb)
+            item.set_size_request(CELL_W, CELL_H)
+            # remplissage en colonnes, de haut en bas, comme xfdesktop
+            self.grid.attach(item, n // self.rows, n % self.rows, 1, 1)
+        self.grid.show_all()
+        return False
+
+    # ---------- actions ----------
+    def select(self, item):
+        if self.selected:
+            self.selected.box.get_style_context().remove_class("selected")
+        self.selected = item
+        if item:
+            item.box.get_style_context().add_class("selected")
+
+    def open_uri(self, uri):
+        try:
+            Gio.AppInfo.launch_default_for_uri(uri, None)
+        except GLib.Error:
+            subprocess.Popen(["xdg-open", uri])
+
+    def launch_app(self, app):
+        try:
+            app.launch([], None)
+        except GLib.Error as e:
+            print("Lancement impossible :", e.message)
+
+    def _bg_press(self, _w, ev):
+        self.select(None)
+        if ev.button == 3:
+            menu = Gtk.Menu()
+            for text, cb in (
+                ("Ouvrir le dossier Bureau",
+                 lambda *_: self.open_uri(self.desk.get_uri())),
+                ("Ouvrir un terminal ici",
+                 lambda *_: subprocess.Popen(
+                     ["exo-open", "--launch", "TerminalEmulator",
+                      "--working-directory", self.desk.get_path()])),
+                ("Actualiser", lambda *_: self.reload()),
+            ):
+                mi = Gtk.MenuItem(label=text)
+                mi.connect("activate", cb)
+                menu.append(mi)
+            menu.show_all()
+            menu.popup_at_pointer(ev)
+        return True
+
+
+def main():
+    win = IconLayer()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    # se placer au-dessus de la vidéo (même couche "bureau")
+    GLib.timeout_add(500, lambda: (win.get_window().raise_(), False)[1])
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()
