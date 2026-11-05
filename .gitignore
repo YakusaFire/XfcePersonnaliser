@@ -1,0 +1,6 @@
+# Vidéos du fond animé : personnelles et lourdes, gardées hors du dépôt
+fonds-animes/*
+!fonds-animes/.gitkeep
+
+__pycache__/
+*.pyc

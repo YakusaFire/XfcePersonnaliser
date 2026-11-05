@@ -1,0 +1,81 @@
+#!/bin/bash
+# Choix du gestionnaire de fenêtres.
+#   bureau-wm compiz   Compiz (effet Génie à la réduction)
+#   bureau-wm xfwm4    gestionnaire d'XFCE + picom
+#   bureau-wm theme    recale la décoration Compiz sur le thème actuel
+#   bureau-wm          affiche le mode actuel
+set -euo pipefail
+
+# Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
+cd "$HOME"
+
+AUTO="$HOME/.config/autostart"
+MODE_FILE="$HOME/.config/bureau-wm"
+
+# Active (true) ou désactive (false) une entrée de démarrage automatique
+autostart() {
+    local f="$AUTO/$1.desktop"
+    [ -f "$f" ] || return 0
+    sed -i '/^Hidden=/d' "$f"
+    [ "$2" = true ] || echo "Hidden=true" >> "$f"
+}
+
+# Décoration Compiz = thème metacity du thème GTK, boutons comme dans xfwm4
+sync_theme() {
+    local gtk layout left right
+    gtk=$(xfconf-query -c xsettings -p /Net/ThemeName)
+    if [ -d "$HOME/.themes/$gtk/metacity-1" ] || [ -d "/usr/share/themes/$gtk/metacity-1" ]; then
+        gsettings set org.mate.Marco.general theme "$gtk"
+    fi
+    layout=$(xfconf-query -c xfwm4 -p /general/button_layout)
+    left=${layout%%|*}; right=${layout#*|}
+    conv() { echo "$1" | sed 's/O/menu,/g;s/H/minimize,/g;s/M/maximize,/g;s/C/close,/g;s/[ST]//g;s/,$//'; }
+    gsettings set org.mate.Marco.general button-layout "$(conv "$left"):$(conv "$right")"
+    gsettings set org.mate.Marco.general titlebar-font \
+        "$(xfconf-query -c xfwm4 -p /general/title_font)"
+}
+
+start_compiz() {
+    sync_theme
+    pkill -x picom || true
+    compiz --replace ccp &>/dev/null & disown
+    sleep 2
+    gtk-window-decorator --replace &>/dev/null & disown
+    restart_panel
+}
+
+start_xfwm4() {
+    pkill -x gtk-window-decorator || true
+    xfconf-query -c xfwm4 -p /general/use_compositing -s false
+    setsid xfwm4 --replace &>/dev/null &
+    sleep 2
+    pgrep -x picom >/dev/null || (setsid picom &>/dev/null &)
+    restart_panel
+}
+
+# Après un changement de WM, le dock (et sa zone de survol) se retrouve en
+# haut à gauche : on relance le panneau une fois le WM prêt.
+restart_panel() {
+    xfce4-panel --quit &>/dev/null || true
+    for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
+    setsid xfce4-panel &>/dev/null &
+}
+
+case "${1:-}" in
+    compiz)
+        echo compiz > "$MODE_FILE"
+        autostart compiz true; autostart picom false
+        start_compiz
+        echo "Compiz activé (aussi au prochain démarrage)" ;;
+    xfwm4)
+        echo xfwm4 > "$MODE_FILE"
+        autostart compiz false; autostart picom true
+        start_xfwm4
+        echo "xfwm4 + picom activés (aussi au prochain démarrage)" ;;
+    theme)
+        sync_theme ;;
+    "")
+        cat "$MODE_FILE" 2>/dev/null || echo xfwm4 ;;
+    *)
+        sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

@@ -1,0 +1,94 @@
+#!/bin/bash
+# Sauvegarde / restauration de l'apparence XFCE.
+#   bureau-profil save <nom>   enregistre l'apparence actuelle
+#   bureau-profil load <nom>   remet un profil enregistré
+#   bureau-profil list         liste les profils
+set -euo pipefail
+
+# Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
+cd "$HOME"
+
+DIR="$HOME/.config/bureau-profils"
+XML="$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+CHANNELS=(xsettings xfwm4 xfce4-panel xfce4-desktop xfce4-terminal xfce4-notifyd)
+# Fichiers/dossiers hors xfconf, relatifs à ~/.config
+EXTRA=(xfce4/panel terminator/config gtk-3.0/settings.ini gtk-3.0/gtk.css gtk-4.0 picom)
+
+usage() { sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+
+# xfconfd garde les réglages en mémoire et ne les écrit qu'à sa sortie :
+# on l'arrête et on attend qu'il ait fini (il redémarre tout seul au besoin).
+flush_xfconf() {
+    pkill -x xfconfd || return 0
+    for _ in $(seq 50); do pgrep -x xfconfd >/dev/null || return 0; sleep 0.1; done
+}
+
+save() {
+    local p="$DIR/$1"
+    rm -rf "$p"; mkdir -p "$p/xfconf" "$p/config"
+    flush_xfconf
+    for c in "${CHANNELS[@]}"; do
+        [ -f "$XML/$c.xml" ] && cp "$XML/$c.xml" "$p/xfconf/"
+    done
+    for e in "${EXTRA[@]}"; do
+        [ -e "$HOME/.config/$e" ] || continue
+        mkdir -p "$p/config/$(dirname "$e")"
+        cp -a "$HOME/.config/$e" "$p/config/$e"
+    done
+    echo "Profil « $1 » enregistré dans $p"
+}
+
+load() {
+    local p="$DIR/$1"
+    [ -d "$p" ] || { echo "Profil « $1 » introuvable"; list; exit 1; }
+    # Sauvegarde automatique de l'état actuel avant d'écraser
+    [ "$1" != "_avant-load" ] && save _avant-load >/dev/null
+
+    # Le panneau doit être arrêté avant de toucher à ses lanceurs, sinon il
+    # voit leurs fichiers disparaître et vide sa liste.
+    xfce4-panel --quit &>/dev/null || true
+    for _ in $(seq 50); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
+    flush_xfconf
+    for c in "${CHANNELS[@]}"; do
+        [ -f "$p/xfconf/$c.xml" ] && cp "$p/xfconf/$c.xml" "$XML/"
+    done
+    for e in "${EXTRA[@]}"; do
+        [ -e "$p/config/$e" ] || continue
+        rm -rf "$HOME/.config/$e"
+        mkdir -p "$HOME/.config/$(dirname "$e")"
+        cp -a "$p/config/$e" "$HOME/.config/$e"
+    done
+
+    # Relance des composants pour qu'ils relisent la config
+    xfconf-query -c xsettings -p /Net/ThemeName >/dev/null  # redémarre xfconfd
+    xfsettingsd --replace &>/dev/null & disown
+    if [ "$(bureau-wm)" = compiz ]; then
+        # Compiz gère fenêtres et effets : on recale juste sa décoration
+        bureau-wm theme
+    else
+        # picom remplace le compositeur de xfwm4 : les deux ne peuvent pas tourner ensemble.
+        # S'il a été désactivé (bureau-reglages), xfwm4 reprend son compositeur intégré.
+        if command -v picom >/dev/null && ! grep -qx 'Hidden=true' "$HOME/.config/autostart/picom.desktop" 2>/dev/null; then
+            xfconf-query -c xfwm4 -p /general/use_compositing -s false
+            pkill -x picom || true; sleep 0.3
+            picom &>/dev/null & disown
+        else
+            pkill -x picom || true
+            xfconf-query -c xfwm4 -p /general/use_compositing -s true
+        fi
+        xfwm4 --replace &>/dev/null & disown
+        sleep 2  # le panneau doit démarrer après le WM, sinon le dock se place en haut à gauche
+    fi
+    xfce4-panel &>/dev/null & disown
+    xfdesktop --reload &>/dev/null || true
+    echo "Profil « $1 » appliqué (ancien état gardé dans « _avant-load »)"
+}
+
+list() { ls -1 "$DIR" 2>/dev/null || echo "(aucun profil)"; }
+
+case "${1:-}" in
+    save) [ -n "${2:-}" ] || usage; save "$2" ;;
+    load) [ -n "${2:-}" ] || usage; load "$2" ;;
+    list) list ;;
+    *) usage ;;
+esac
