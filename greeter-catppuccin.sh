@@ -2,16 +2,33 @@
 # Applique le style Catppuccin Mocha à l'écran de connexion LightDM (lightdm-gtk-greeter).
 # Usage : sudo ./greeter-catppuccin.sh          -> installe
 #         sudo ./greeter-catppuccin.sh restore  -> remet la config d'origine
+#
+# Marche sur n'importe quel Debian avec lightdm-gtk-greeter. Chaque élément est pris là où il
+# est installé pour tout le système, sinon copié depuis le dossier personnel (le greeter tourne
+# sous l'utilisateur lightdm, qui ne peut pas lire ~), sinon remplacé :
+#   thème GTK Catppuccin           -> base Adwaita sombre, intégrée à GTK
+#   icônes Papirus-Dark            -> Adwaita (paquet Debian : papirus-icon-theme)
+#   curseurs Catppuccin            -> curseurs par défaut
+#   image catppuccin-mocha.png     -> fond uni #1e1e2e (image cherchée dans fonds/ de l'interface)
+#   police Inter                   -> police par défaut (paquet Debian : fonts-inter)
+#
+# Tests : RACINE=/un/dossier ./greeter-catppuccin.sh écrit sous ce dossier au lieu de /,
+# sans être root, avec $HOME comme dossier personnel.
 set -e
 
-[ "$(id -u)" -eq 0 ] || { echo "Lance ce script avec sudo."; exit 1; }
-
-# Utilisateur qui a lancé sudo (terminal) ou pkexec (bureau-reglages)
-U_NAME=${SUDO_USER:-}
-[ -z "$U_NAME" ] && [ -n "${PKEXEC_UID:-}" ] && U_NAME=$(id -nu "$PKEXEC_UID")
-[ -n "$U_NAME" ] || { echo "Lance ce script avec sudo ou pkexec depuis ta session."; exit 1; }
-U_HOME=$(getent passwd "$U_NAME" | cut -d: -f6)
-CONF=/etc/lightdm/lightdm-gtk-greeter.conf
+RACINE="${RACINE:-}"
+U_HOME=""
+if [ -n "$RACINE" ]; then
+    U_HOME=$HOME
+else
+    [ "$(id -u)" -eq 0 ] || { echo "Lance ce script avec sudo."; exit 1; }
+    # Utilisateur qui a lancé sudo (terminal) ou pkexec (bureau-reglages) ; sans lui, seuls
+    # les éléments installés pour tout le système sont utilisés
+    U_NAME=${SUDO_USER:-}
+    [ -z "$U_NAME" ] && [ -n "${PKEXEC_UID:-}" ] && U_NAME=$(id -nu "$PKEXEC_UID")
+    [ -z "$U_NAME" ] || U_HOME=$(getent passwd "$U_NAME" | cut -d: -f6)
+fi
+CONF=$RACINE/etc/lightdm/lightdm-gtk-greeter.conf
 BACKUP=$CONF.avant-catppuccin
 
 GTK_THEME=catppuccin-mocha-mauve-standard+default
@@ -19,39 +36,98 @@ GREETER_THEME=Catppuccin-Mocha-Greeter
 CURSORS=catppuccin-mocha-dark-cursors
 WALL=/usr/share/backgrounds/catppuccin/catppuccin-mocha.png
 
-if [ "$1" = "restore" ]; then
-    [ -f "$BACKUP" ] && cp "$BACKUP" "$CONF" && echo "Config d'origine restaurée."
+if [ "${1:-}" = "restore" ]; then
+    if [ -f "$BACKUP" ]; then
+        cp "$BACKUP" "$CONF" && echo "Config d'origine restaurée."
+    else
+        echo "Pas de sauvegarde ${BACKUP#"$RACINE"} : rien à restaurer."
+    fi
     exit 0
 fi
 
-# 1. Thème GTK, icônes, curseurs et fond d'écran dans des dossiers lisibles par lightdm
-echo "Copie du thème GTK..."
-cp -a "$U_HOME/.themes/$GTK_THEME" /usr/share/themes/
+if [ -z "$RACINE" ] && [ ! -x /usr/sbin/lightdm-gtk-greeter ]; then
+    echo "lightdm-gtk-greeter n'est pas installé. Lance : sudo apt install lightdm-gtk-greeter" >&2
+    exit 1
+fi
 
-echo "Copie des icônes et curseurs (Papirus fait ~1 Go, patience)..."
-for d in Papirus Papirus-Dark "$CURSORS"; do
-    [ -d "/usr/share/icons/$d" ] || cp -a "$U_HOME/.local/share/icons/$d" /usr/share/icons/
-done
+REMPLACES=()  # éléments introuvables, rappelés à la fin
+
+# Dossier d'un thème (TYPE : themes ou icons) lisible par le greeter : installé pour tout le
+# système, sinon copié depuis le dossier personnel. Affiche son chemin ; échoue s'il est introuvable.
+trouver() {
+    local type=$1 nom=$2 d
+    for d in "/usr/local/share/$type" "/usr/share/$type"; do
+        [ -d "$RACINE$d/$nom" ] && { echo "$d/$nom"; return 0; }
+    done
+    [ -n "$U_HOME" ] || return 1
+    for d in "$U_HOME/.local/share/$type" "$U_HOME/.$type"; do
+        [ -d "$d/$nom" ] || continue
+        local note=""
+        case $nom in Papirus*) note=" (~1 Go, patience)" ;; esac
+        echo "Copie de $nom depuis ${d/#"$U_HOME"/\~}$note…" >&2
+        mkdir -p "$RACINE/usr/share/$type" || return 1
+        cp -a "$d/$nom" "$RACINE/usr/share/$type/" || return 1
+        if [ -z "$RACINE" ]; then chown -R root:root "/usr/share/$type/$nom" || return 1; fi
+        chmod -R a+rX "$RACINE/usr/share/$type/$nom" || return 1
+        echo "/usr/share/$type/$nom"
+        return 0
+    done
+    return 1
+}
+
+# 1. Thème GTK de base, icônes, curseurs, fond d'écran et police
+if BASE=$(trouver themes "$GTK_THEME"); then
+    IMPORT="@import url(\"$BASE/gtk-3.0/gtk.css\");"
+else
+    BASE=""
+    IMPORT='@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");'
+    REMPLACES+=("thème GTK Catppuccin : base Adwaita sombre")
+fi
+
+# Papirus-Dark hérite de Papirus : il faut les deux
+if trouver icons Papirus-Dark >/dev/null && trouver icons Papirus >/dev/null; then
+    ICONES=Papirus-Dark
+else
+    ICONES=Adwaita
+    REMPLACES+=("icônes Papirus : Adwaita (sudo apt install papirus-icon-theme)")
+fi
+
+if trouver icons "$CURSORS" >/dev/null; then
+    CURSEUR=$CURSORS
+else
+    CURSEUR=""
+    REMPLACES+=("curseurs Catppuccin : curseurs par défaut")
+fi
 
 # Image prise dans le dossier des fonds de l'interface : fonds/ du projet, ou
 # ~/.local/share/bureau-reglages/fonds/ si le projet est installé en lecture seule ;
-# l'ancien emplacement en secours
+# l'ancien emplacement en secours, puis l'image copiée lors d'un passage précédent
 ICI=$(dirname "$(realpath "$0")")
-for SOURCE_FOND in "$ICI/fonds" "$U_HOME/.local/share/bureau-reglages/fonds" "$U_HOME/Pictures/Wallpapers"; do
-    SOURCE_FOND="$SOURCE_FOND/catppuccin-mocha.png"
-    [ -f "$SOURCE_FOND" ] && break
+SOURCES=("$ICI/fonds")
+[ -z "$U_HOME" ] || SOURCES+=("$U_HOME/.local/share/bureau-reglages/fonds" "$U_HOME/Pictures/Wallpapers")
+for d in "${SOURCES[@]}"; do
+    if [ -f "$d/catppuccin-mocha.png" ]; then
+        mkdir -p "$RACINE$(dirname "$WALL")"
+        cp "$d/catppuccin-mocha.png" "$RACINE$WALL"
+        chmod a+rX "$RACINE$(dirname "$WALL")" "$RACINE$WALL"
+        break
+    fi
 done
-mkdir -p "$(dirname "$WALL")"
-cp "$SOURCE_FOND" "$WALL"
+if [ -f "$RACINE$WALL" ]; then
+    FOND=$WALL
+else
+    FOND="#1e1e2e"  # « base » de Catppuccin Mocha
+    REMPLACES+=("image catppuccin-mocha.png : fond uni")
+fi
 
-chown -R root:root "/usr/share/themes/$GTK_THEME" /usr/share/icons/Papirus /usr/share/icons/Papirus-Dark \
-    "/usr/share/icons/$CURSORS" "$(dirname "$WALL")"
-chmod -R a+rX "/usr/share/themes/$GTK_THEME" /usr/share/icons/Papirus /usr/share/icons/Papirus-Dark \
-    "/usr/share/icons/$CURSORS" "$(dirname "$WALL")"
+# Le greeter ne voit que les polices installées pour tout le système
+fc-list :family=Inter file 2>/dev/null | grep -q . ||
+    REMPLACES+=("police Inter : police par défaut (sudo apt install fonts-inter)")
 
-# 2. Thème dédié au greeter : Catppuccin + retouches de la fenêtre de connexion
-mkdir -p "/usr/share/themes/$GREETER_THEME/gtk-3.0"
-cat > "/usr/share/themes/$GREETER_THEME/index.theme" <<EOF
+# 2. Thème dédié au greeter : la base + les retouches de la fenêtre de connexion
+DOSSIER_GREETER=$RACINE/usr/share/themes/$GREETER_THEME
+mkdir -p "$DOSSIER_GREETER/gtk-3.0"
+cat > "$DOSSIER_GREETER/index.theme" <<EOF
 [Desktop Entry]
 Type=X-GNOME-Metatheme
 Name=$GREETER_THEME
@@ -59,13 +135,14 @@ Comment=Catppuccin Mocha pour lightdm-gtk-greeter
 
 [X-GNOME-Metatheme]
 GtkTheme=$GREETER_THEME
-IconTheme=Papirus-Dark
-CursorTheme=$CURSORS
+IconTheme=$ICONES
 EOF
+[ -z "$CURSEUR" ] || echo "CursorTheme=$CURSEUR" >> "$DOSSIER_GREETER/index.theme"
 
-cat > "/usr/share/themes/$GREETER_THEME/gtk-3.0/gtk.css" <<'EOF'
-@import url("../../catppuccin-mocha-mauve-standard+default/gtk-3.0/gtk.css");
-
+{
+    echo "$IMPORT"
+    echo
+    cat <<'EOF'
 /* Palette Catppuccin Mocha */
 @define-color ctp_base     #1e1e2e;
 @define-color ctp_mantle   #181825;
@@ -178,20 +255,39 @@ cat > "/usr/share/themes/$GREETER_THEME/gtk-3.0/gtk.css" <<'EOF'
     border-radius: 10px;
 }
 EOF
-chmod -R a+rX "/usr/share/themes/$GREETER_THEME"
+    # Sans le thème Catppuccin, la base Adwaita garde ses menus gris : on les recolore
+    [ -n "$BASE" ] || cat <<'EOF'
+
+/* Base Adwaita sombre : menus, listes déroulantes et bulles aux couleurs Catppuccin */
+menu, .menu, .context-menu {
+    background-color: @ctp_mantle;
+    color: @ctp_text;
+    border: 1px solid @ctp_surface0;
+}
+menu menuitem:hover, .menu menuitem:hover {
+    background-color: alpha(@ctp_mauve, 0.25);
+    color: @ctp_text;
+}
+#login_window combobox button:hover { background-color: @ctp_surface1; }
+tooltip, tooltip * { background-color: @ctp_crust; color: @ctp_text; }
+EOF
+} > "$DOSSIER_GREETER/gtk-3.0/gtk.css"
+chmod -R a+rX "$DOSSIER_GREETER"
 
 # 3. Configuration du greeter (sauvegarde de l'original une seule fois)
-[ -f "$BACKUP" ] || cp "$CONF" "$BACKUP"
+mkdir -p "$(dirname "$CONF")"
+if [ ! -f "$BACKUP" ] && [ -f "$CONF" ]; then cp "$CONF" "$BACKUP"; fi
 cat > "$CONF" <<EOF
 # Style Catppuccin Mocha — généré par greeter-catppuccin.sh
-# Original : $BACKUP
+# Original : ${BACKUP#"$RACINE"}
 [greeter]
-background=$WALL
+background=$FOND
 user-background=false
 theme-name=$GREETER_THEME
-icon-theme-name=Papirus-Dark
-cursor-theme-name=$CURSORS
-cursor-theme-size=24
+icon-theme-name=$ICONES
+EOF
+[ -z "$CURSEUR" ] || printf 'cursor-theme-name=%s\ncursor-theme-size=24\n' "$CURSEUR" >> "$CONF"
+cat >> "$CONF" <<EOF
 font-name=Inter 11
 xft-antialias=true
 xft-hintstyle=hintslight
@@ -204,4 +300,8 @@ EOF
 
 echo
 echo "Écran de connexion configuré en Catppuccin Mocha."
+if [ ${#REMPLACES[@]} -gt 0 ]; then
+    echo "Remplacé, faute d'être installé :"
+    printf '  - %s\n' "${REMPLACES[@]}"
+fi
 echo "Aperçu sans redémarrer : verrouille ta session (Ctrl+Alt+Suppr ou xflock4) ou déconnecte-toi."

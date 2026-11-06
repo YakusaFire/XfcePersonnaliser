@@ -61,6 +61,12 @@ CACHE = os.path.join(GLib.get_user_cache_dir(), "bureau-reglages")  # miniatures
 GREETER_SCRIPT = os.path.join(ICI, "greeter-catppuccin.sh")
 GREETER_CONF = "/etc/lightdm/lightdm-gtk-greeter.conf"
 GREETER_THEME = "Catppuccin-Mocha-Greeter"
+GREETER_CSS = f"/usr/share/themes/{GREETER_THEME}/gtk-3.0/gtk.css"
+# Éléments que greeter-catppuccin.sh prend s'ils sont installés (sinon il les remplace)
+GREETER_GTK = "catppuccin-mocha-mauve-standard+default"
+GREETER_CURSEURS = "catppuccin-mocha-dark-cursors"
+GREETER_IMAGE = "catppuccin-mocha.png"
+GREETER_FOND = f"/usr/share/backgrounds/catppuccin/{GREETER_IMAGE}"  # copie faite par le script
 MEMO = os.path.join(ICI, "commandes-bureau.md")
 
 # Mêmes dossiers que GTK : ~/.themes ou ~/.icons, puis themes/ et icons/ de ~/.local/share et
@@ -238,6 +244,48 @@ def themes(contenu):
     """Thèmes qui contiennent ce fichier ou dossier (gtk-3.0/gtk.css, xfwm4…)."""
     return sorted({n for n, p in lister(DOSSIERS_THEMES)
                    if n != GREETER_THEME and os.path.exists(os.path.join(p, contenu))}, key=str.casefold)
+
+
+def valeur_ini(texte, cle):
+    m = re.search(rf"^{re.escape(cle)}\s*=\s*(.*?)\s*$", texte, re.M)
+    return m.group(1) if m else ""
+
+
+def police_systeme(famille):
+    """Police installée pour tout le système ? L'écran de connexion ne voit pas celles de ~.
+    True si on ne peut pas le savoir (fc-list absent)."""
+    try:
+        sortie = subprocess.run(["fc-list", f":family={famille}", "file"], capture_output=True, text=True).stdout
+    except OSError:
+        return True
+    return any(l.strip() and not l.startswith(HOME + os.sep) for l in sortie.splitlines())
+
+
+def rendu_greeter(actif):
+    """Éléments du style de l'écran de connexion, et paquets Debian qui le compléteraient.
+    Style actif : d'après sa configuration. Sinon : ce que greeter-catppuccin.sh trouvera
+    (installé pour tout le système ou dans le dossier personnel, comme lui)."""
+    if actif:
+        conf = lire(GREETER_CONF)
+        catppuccin = "Adwaita" not in lire(GREETER_CSS).split("\n", 1)[0]
+        icones = valeur_ini(conf, "icon-theme-name") == "Papirus-Dark"
+        curseurs = valeur_ini(conf, "cursor-theme-name") == GREETER_CURSEURS
+        image = not valeur_ini(conf, "background").startswith("#")
+    else:
+        def present(dossiers, nom):
+            return any(os.path.isdir(os.path.join(d, nom)) for d in dossiers)
+        catppuccin = present(DOSSIERS_THEMES, GREETER_GTK)
+        icones = present(DOSSIERS_ICONES, "Papirus-Dark") and present(DOSSIERS_ICONES, "Papirus")
+        curseurs = present(DOSSIERS_ICONES, GREETER_CURSEURS)
+        sources = (os.path.join(ICI, "fonds"), os.path.join(HOME, ".local", "share", "bureau-reglages", "fonds"),
+                   os.path.join(HOME, "Pictures", "Wallpapers"))
+        image = os.path.isfile(GREETER_FOND) or any(os.path.isfile(os.path.join(d, GREETER_IMAGE)) for d in sources)
+    elements = ["thème Catppuccin" if catppuccin else "base Adwaita sombre",
+                "icônes Papirus" if icones else "icônes Adwaita",
+                *(["curseurs Catppuccin"] if curseurs else []),
+                "fond Catppuccin" if image else "fond uni"]
+    paquets = [p for p, ok in (("papirus-icon-theme", icones), ("fonts-inter", police_systeme("Inter"))) if not ok]
+    return elements, paquets
 
 
 def themes_icones():
@@ -1537,10 +1585,15 @@ class Fenetre(Gtk.ApplicationWindow):
             texte = f"L'écran de connexion de ce système est {dm}, pas LightDM : ce style ne s'y applique pas."
         elif manque:
             texte = f"Le style s'applique à l'écran de connexion LightDM (lightdm-gtk-greeter). {a_installer(manque)}"
-        elif e.greeter:
-            texte = "Activé : fond Catppuccin, fenêtre arrondie à bordure mauve, icônes Papirus."
         else:
-            texte = "Désactivé : style d'origine de l'écran de connexion."
+            elements, paquets = rendu_greeter(e.greeter)
+            if e.greeter:
+                texte = f"Activé : fenêtre arrondie à bordure mauve, {', '.join(elements)}."
+            else:
+                texte = f"Désactivé : style d'origine. À l'activation : {', '.join(elements)}."
+            if paquets:
+                texte += (f" Pour le rendu complet : {a_installer(paquets)}"
+                          + (", puis désactive et réactive le style." if e.greeter else "."))
         self.ligne_greeter.desc.set_text(texte)
         self.ligne_verrou.set_sensitive(e.programmes["dm-tool"])
         self.ligne_verrou.desc.set_text("Verrouille la session pour afficher l'écran de connexion."
