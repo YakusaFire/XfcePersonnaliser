@@ -20,21 +20,34 @@
 
 set -u
 ICI="$(dirname "$(realpath "$0")")"
-CONF_DIR="$HOME/.config/fond-anime"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+CONF_DIR="$CONF/fond-anime"
 SAVED="$CONF_DIR/video"
 PIDFILE="$CONF_DIR/pid"
-AUTOSTART="$HOME/.config/autostart/fond-anime.desktop"
+AUTOSTART="$CONF/autostart/fond-anime.desktop"
 # Remet le fond d'écran à l'ouverture de session s'il est resté masqué (session fermée
 # pendant le fond animé) : créé quand le fond est masqué, enlevé quand il est remis
-NETTOYAGE="$HOME/.config/autostart/fond-anime-nettoyage.desktop"
+NETTOYAGE="$CONF/autostart/fond-anime-nettoyage.desktop"
 XWINWRAP="$(command -v xwinwrap || echo "$HOME/.local/bin/xwinwrap")"
-PICOM_CONF="$HOME/.config/picom/picom.conf"
+PICOM_CONF="$CONF/picom/picom.conf"
 SHADER=fond-anime.glsl
 # Prise de commande de mpv : fond-anime-video s'en sert pour la pause automatique
 PRISE="${XDG_RUNTIME_DIR:-$CONF_DIR}/fond-anime-mpv.sock"
 PAUSE_AUTO="$CONF_DIR/pause-auto"
 
 mkdir -p "$CONF_DIR"
+
+# Commande à écrire dans une entrée de démarrage, en chemin complet (le PATH de la session n'a
+# pas forcément ~/.local/bin) : un lien vers ce script trouvé dans le PATH ou dans ~/.local/bin
+# (installer.sh), /usr/bin pour un paquet…, sinon le script lui-même
+chemin_commande() {
+    local d IFS=:
+    for d in $PATH "$HOME/.local/bin"; do
+        [ "$d" != "$ICI" ] && [ -x "$d/$1" ] && [ "$(realpath "$d/$1" 2>/dev/null)" = "$ICI/$1" ] &&
+            { echo "$d/$1"; return; }
+    done
+    echo "$ICI/$1"
+}
 
 # Motifs ancrés sur le programme lancé : un éditeur ou un grep qui cite ces noms n'est pas visé
 en_cours() { pgrep -f "^mpv .*fond-anime-mp[v]" >/dev/null; }
@@ -68,7 +81,7 @@ masquer_fond() {
 [Desktop Entry]
 Type=Application
 Name=Fond animé : remise du fond d'écran
-Exec=$HOME/.local/bin/fond-anime actualiser
+Exec="$(chemin_commande fond-anime)" actualiser
 X-GNOME-Autostart-enabled=true
 EOF
     "$ICI/fond-anime-fond" masquer ${1:+"$1"}
@@ -83,8 +96,8 @@ restaurer_fond() {
 picom_pret() {
     [ "$("$ICI/bureau-wm" 2>/dev/null)" != compiz ] || return 1
     pgrep -x picom >/dev/null && return 0
-    [ -f "$HOME/.config/autostart/picom.desktop" ] &&
-        ! grep -qx 'Hidden=true' "$HOME/.config/autostart/picom.desktop" || return 1
+    [ -f "$CONF/autostart/picom.desktop" ] &&
+        ! grep -qx 'Hidden=true' "$CONF/autostart/picom.desktop" || return 1
     for _ in $(seq 20); do
         sleep 0.5
         pgrep -x picom >/dev/null && return 0
@@ -167,7 +180,7 @@ start() {
             elif ! command -v picom >/dev/null; then
                 echo "Il faut picom pour placer la vidéo sous le bureau. Lance : sudo apt install picom" >&2
             else
-                echo "picom ne tourne pas, ou ~/.config/picom/picom.conf n'a pas de bloc « rules = ( … ) » (picom 12) ;" \
+                echo "picom ne tourne pas, ou ${PICOM_CONF/#$HOME/\~} n'a pas de bloc « rules = ( … ) » (picom 12) ;" \
                      "sans picom prêt, le fond animé a besoin de xwinwrap." >&2
             fi
             restaurer_fond; exit 1
@@ -192,7 +205,7 @@ autostart() {
 [Desktop Entry]
 Type=Application
 Name=Fond d'écran animé
-Exec=sh -c "sleep 3; $HOME/.local/bin/fond-anime"
+Exec=sh -c "sleep 3; '$(chemin_commande fond-anime)'"
 X-GNOME-Autostart-enabled=true
 EOF
             echo "Démarrage automatique activé." ;;

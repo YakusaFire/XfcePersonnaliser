@@ -21,8 +21,8 @@ et une interface graphique qui regroupe le tout.
 | `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand picom ne tourne pas |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
 | `installer.sh` | Installe les commandes dans `~/.local/bin` et l'entrée du menu |
-| `fonds/` | Images proposées pour le fond d'écran (non versionnées) |
-| `fonds-animes/` | Vidéos proposées pour le fond animé (non versionnées) |
+| `fonds/` | Images proposées pour le fond d'écran (non versionnées) ; `~/.local/share/bureau-reglages/fonds/` si le projet est installé en lecture seule |
+| `fonds-animes/` | Vidéos proposées pour le fond animé (non versionnées) ; même règle |
 | `commandes-bureau.md` | Mémo de toutes les commandes et des fichiers utilisés |
 
 ## Installation

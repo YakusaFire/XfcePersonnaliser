@@ -10,8 +10,9 @@ ICI="$(dirname "$(realpath "$0")")"
 # Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
 cd "$HOME"
 
-AUTO="$HOME/.config/autostart"
-MODE_FILE="$HOME/.config/bureau-wm"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+AUTO="$CONF/autostart"
+MODE_FILE="$CONF/bureau-wm"
 
 # Active (true) ou désactive (false) une entrée de démarrage automatique
 autostart() {
@@ -30,9 +31,15 @@ sync_theme() {
         return 0
     fi
     gtk=$(xfconf-query -c xsettings -p /Net/ThemeName)
-    if [ -d "$HOME/.themes/$gtk/metacity-1" ] || [ -d "/usr/share/themes/$gtk/metacity-1" ]; then
-        gsettings set org.mate.Marco.general theme "$gtk"
-    fi
+    # Dossiers de thèmes de GTK : ~/.themes, ~/.local/share/themes, puis ceux de $XDG_DATA_DIRS
+    local donnees d
+    IFS=: read -ra donnees <<< "${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    for d in "$HOME/.themes" "${XDG_DATA_HOME:-$HOME/.local/share}/themes" "${donnees[@]/%//themes}"; do
+        if [ -d "$d/$gtk/metacity-1" ]; then
+            gsettings set org.mate.Marco.general theme "$gtk"
+            break
+        fi
+    done
     layout=$(xfconf-query -c xfwm4 -p /general/button_layout)
     left=${layout%%|*}; right=${layout#*|}
     conv() { echo "$1" | sed 's/O/menu,/g;s/H/minimize,/g;s/M/maximize,/g;s/C/close,/g;s/[ST]//g;s/,$//'; }

@@ -64,7 +64,9 @@ try:
 except OSError:
     xext = None
 
-REGLAGE_PAUSE = os.path.expanduser("~/.config/fond-anime/pause-auto")
+# ~/.config, ou $XDG_CONFIG_HOME s'il est défini (comme fond-anime)
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+REGLAGE_PAUSE = os.path.join(CONFIG, "fond-anime", "pause-auto")
 ATOMES = ("_NET_CURRENT_DESKTOP", "_NET_CLIENT_LIST", "_NET_WM_DESKTOP", "_NET_WM_STATE",
           "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE_MAXIMIZED_VERT", "_NET_WM_STATE_MAXIMIZED_HORZ",
           "_NET_WM_STATE_HIDDEN")
