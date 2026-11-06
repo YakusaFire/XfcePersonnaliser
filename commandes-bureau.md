@@ -166,15 +166,28 @@ fond-anime auto off
 ## `greeter-catppuccin.sh` — écran de connexion (LightDM)
 
 L'écran de connexion tourne sous l'utilisateur `lightdm`, qui ne peut pas lire `~/.themes`
-ni `~/.local/share/icons`. Le script copie thème, icônes, curseurs et fond d'écran dans
-`/usr/share/…`, crée un thème dédié `Catppuccin-Mocha-Greeter` (fenêtre arrondie, bordure
-mauve, bouton mauve) et écrit `/etc/lightdm/lightdm-gtk-greeter.conf`.
+ni `~/.local/share/icons`. Pour chaque élément, le script prend la version installée pour
+tout le système (`/usr/share`, `/usr/local/share`), sinon copie celle du dossier personnel
+dans `/usr/share/…`, sinon la remplace :
+
+| Élément | S'il manque |
+|---|---|
+| Thème GTK `catppuccin-mocha-mauve-standard+default` | Base Adwaita sombre, intégrée à GTK |
+| Icônes Papirus-Dark (et Papirus) | Icônes Adwaita — `sudo apt install papirus-icon-theme` |
+| Curseurs `catppuccin-mocha-dark-cursors` | Curseurs par défaut |
+| Image `catppuccin-mocha.png` (dossier des fonds de l'interface) | Fond uni `#1e1e2e` |
+| Police Inter (installée pour tout le système) | Police par défaut — `sudo apt install fonts-inter` |
+
+Il crée ensuite un thème dédié `Catppuccin-Mocha-Greeter` (fenêtre arrondie, bordure mauve,
+bouton mauve) et écrit `/etc/lightdm/lightdm-gtk-greeter.conf`. Il dit à la fin ce qu'il a
+remplacé ; l'interface affiche ce qui est utilisé et les paquets qui complètent le rendu.
 
 | Commande | Effet |
 |---|---|
 | `sudo ./greeter-catppuccin.sh` | Applique Catppuccin Mocha à l'écran de connexion |
 | `sudo ./greeter-catppuccin.sh restore` | Remet la config d'origine du greeter |
 | `dm-tool lock` | Verrouille la session pour voir le résultat |
+| `RACINE=/tmp/essai ./greeter-catppuccin.sh` | Test sans root : écrit sous `/tmp/essai` au lieu de `/` (y mettre `etc/lightdm/lightdm-gtk-greeter.conf` avant) |
 
 Retoucher le style : `/usr/share/themes/Catppuccin-Mocha-Greeter/gtk-3.0/gtk.css`
 (sauvegarde de la config : `/etc/lightdm/lightdm-gtk-greeter.conf.avant-catppuccin`).

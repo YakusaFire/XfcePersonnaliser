@@ -28,17 +28,19 @@ déjà `preparer_picom`.
 
 | | Élément | Où | Dans Debian ? |
 |---|---|---|---|
-| 🔴 | Thème GTK `catppuccin-mocha-mauve-standard+default` lu dans `~/.themes/` | `greeter-catppuccin.sh` (`cp -a "$U_HOME/.themes/$GTK_THEME"`) | Non. Le script échoue (`set -e`). |
-| 🔴 | Curseurs `catppuccin-mocha-dark-cursors` lus dans `~/.local/share/icons/` | `greeter-catppuccin.sh` | Non. |
-| 🟠 | Fond `catppuccin-mocha.png` | `greeter-catppuccin.sh` | ✅ lu dans `fonds/` du projet (ancien emplacement en secours) ; mais `fonds/` n'est pas versionné : l'image est à fournir. |
-| 🟠 | Papirus / Papirus-Dark copiés depuis `~/.local/share/icons/` s'ils manquent dans `/usr/share/icons/` | `greeter-catppuccin.sh` | **Oui** : paquet `papirus-icon-theme`, inutile de copier ~1 Go. |
+| ✅ | Thème GTK `catppuccin-mocha-mauve-standard+default` lu dans `~/.themes/` | `greeter-catppuccin.sh` | Non. **Corrigé** : pris dans `/usr/share/themes` s'il y est, sinon copié depuis `~`, sinon base Adwaita sombre intégrée à GTK (plus d'échec). |
+| ✅ | Curseurs `catppuccin-mocha-dark-cursors` lus dans `~/.local/share/icons/` | `greeter-catppuccin.sh` | Non. **Corrigé** : même règle, sinon curseurs par défaut. |
+| ✅ | Fond `catppuccin-mocha.png` | `greeter-catppuccin.sh` | **Corrigé** : lu dans `fonds/` (ou le dossier de données), sinon fond uni `#1e1e2e`. |
+| ✅ | Papirus / Papirus-Dark copiés depuis `~/.local/share/icons/` s'ils manquent dans `/usr/share/icons/` | `greeter-catppuccin.sh` | **Oui** : paquet `papirus-icon-theme`. **Corrigé** : copie depuis `~` seulement s'il n'est pas installé, sinon icônes Adwaita ; l'interface conseille le paquet. |
 | 🟠 | Thème xfwm4 `Catppuccin-Mocha-WM`, police Inter | Profils enregistrés | Thème : non. Police : oui (`fonts-inter`). |
 | 🟢 | Textes de l'interface qui citent Catppuccin et Papirus (« Style Catppuccin Mocha », « icônes Papirus ») | `bureau-reglages.py` vers la ligne 1371 | — |
 
-**À faire** : pour l'écran de connexion, deux choix possibles. Soit le script télécharge le
-thème et les curseurs Catppuccin depuis leurs dépôts GitHub officiels (versions fixées), soit
-on les met dans le paquet (licence MIT). Ensuite, prendre `papirus-icon-theme` et
-`fonts-inter` dans Debian et griser l'option si un élément manque, au lieu de planter.
+**Fait (étape 4)** : ni téléchargement ni thème fourni avec le logiciel. Chaque élément est
+pris là où il est installé, sinon dans le dossier personnel, sinon remplacé : base Adwaita
+sombre (fichier CSS intégré à GTK), icônes Adwaita, curseurs par défaut, fond uni. Les
+retouches Catppuccin de la fenêtre de connexion restent, et l'interface dit ce qui est
+utilisé et quels paquets Debian complètent le rendu (`papirus-icon-theme`, `fonts-inter`).
+Le script refuse proprement si lightdm-gtk-greeter manque.
 
 ## 3. Chemins propres à cette installation
 
@@ -122,8 +124,9 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    dans `~/.local/share/bureau-reglages/` quand le logiciel est en lecture seule (l'interface
    ne plante plus). Reste pour le paquet : une vraie installation à la place des liens de
    `installer.sh`. *(section 3)*
-4. **Écran de connexion** : téléchargement ou fourniture du thème, plus de copie depuis `~`.
-   *(section 2)*
+4. ✅ **Écran de connexion** *(fait le 6/11)* : plus d'échec quand un thème manque. Chaque
+   élément est pris dans `/usr/share`, sinon copié depuis `~`, sinon remplacé (Adwaita sombre,
+   fond uni…). Mode test `RACINE=dossier` (sans root). *(section 2)*
 5. **Paquet `.deb`** avec les dépendances, puis test dans une machine virtuelle Debian 13 +
    XFCE neuve.
 6. Facultatif : xwinwrap, Debian 12, traduction.

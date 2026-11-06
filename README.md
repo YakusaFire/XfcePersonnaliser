@@ -40,7 +40,10 @@ s'il est déplacé.
 - Python 3 avec PyGObject (GTK 3) et pycairo
 - picom 12 ou plus récent ; Compiz en option (effet Génie)
 - mpv, ffmpeg / ffprobe, xrandr, et `xwinwrap` dans `~/.local/bin` (non fourni)
-- Thèmes non fournis : Catppuccin GTK (Mocha, accent mauve), Papirus, curseurs Catppuccin, WhiteSur
+- Thèmes non fournis : Catppuccin GTK (Mocha, accent mauve), Papirus, curseurs Catppuccin, WhiteSur.
+  L'écran de connexion s'en passe : sans eux, il prend une base Adwaita sombre, les icônes
+  Adwaita, les curseurs par défaut et un fond uni (`papirus-icon-theme` et `fonts-inter`
+  complètent le rendu).
 
 L'interface grise ce dont le programme manque et donne la commande `sudo apt install …` ;
 elle prévient si la session n'est pas XFCE sous X11. Ce qui reste à faire pour que le projet
