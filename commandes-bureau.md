@@ -228,6 +228,37 @@ Les commandes se lancent depuis le dossier du projet.
 
 ---
 
+## Paquet Debian (`construire-deb.sh`)
+
+| Commande | Effet |
+|---|---|
+| `./construire-deb.sh` | Fabrique `paquet/xfce-personnaliser_<version>_all.deb` (sans root) |
+| `VERSION=0.2.0 ./construire-deb.sh` | Même chose avec une version choisie |
+| `sudo apt install ./paquet/xfce-personnaliser_*_all.deb` | Installe le paquet et ses dépendances |
+| `sudo apt remove xfce-personnaliser` | Le désinstalle (les réglages de `~/.config` restent) |
+| `dpkg-deb --contents paquet/*.deb` | Liste ce que contient le paquet |
+| `tests/tester-paquet.sh` | Construit le paquet et le teste dans un Debian 13 neuf (conteneur Docker, sans réseau après la 1re fois) |
+| `tests/tester-paquet.sh --refaire` | Même chose en préparant de nouveau l'image d'essai |
+
+> Test du paquet : la première fois, `tests/tester-paquet.sh` télécharge l'image `debian:trixie`
+> (~50 Mo) et les dépendances (~110 Mo), puis garde l'image `xfce-personnaliser-essai:base`
+> (~880 Mo) et le volume `xfce-personnaliser-apt` (~105 Mo). Tout supprimer :
+> `docker rmi xfce-personnaliser-essai:base debian:trixie; docker volume rm xfce-personnaliser-apt`.
+
+> Version par défaut : `0.1.0+git<date du dernier commit>.<commit>`, avec `.modifie` si des
+> fichiers ne sont pas commités. Le mainteneur indiqué est `$DEBFULLNAME <$DEBEMAIL>`, sinon
+> l'identité git. Le paquet contient les fichiers du dépôt sauf ceux ignorés par git (ni
+> `fonds/`, ni `fonds-animes/`, ni `CLAUDE.md`).
+> Installé, le logiciel est dans `/usr/share/xfce-personnaliser/` (lecture seule) avec des
+> liens dans `/usr/bin` : les images et vidéos ajoutées vont dans
+> `~/.local/share/bureau-reglages/`. L'entrée du menu vient du même modèle que celle
+> d'`installer.sh` (`config/bureau-reglages.desktop`).
+> Dépendances : XFCE (xfconf, xfwm4, xfdesktop4, xfce4-panel, xfce4-settings), Python avec
+> GTK 3, outils X11 ; recommandés : picom 12, mpv, ffmpeg, xdg-utils, exo-utils,
+> papirus-icon-theme, fonts-inter ; suggérés : Compiz, LightDM, pkexec.
+
+---
+
 ## Paquets installés (avec sudo)
 
 ```bash
@@ -250,7 +281,8 @@ sudo apt install mpv   # fond animé
 | Fond animé (shader picom) | `config/picom/fond-anime.glsl` (ce dossier), copié dans `~/.config/picom/` |
 | Fond animé (vrai fond gardé de côté) | `~/.config/fond-anime/fond-xfdesktop.json` (pendant la vidéo) |
 | Sauvegarde d'avant le passage sous le bureau | `~/.config/fond-anime/sauvegarde-avant-vrai-bureau/` (`picom.conf`, fond de xfdesktop) |
-| Installation des liens et du menu | `installer.sh` (ce dossier) |
+| Installation des liens et du menu | `installer.sh` (ce dossier) ; modèle de l'entrée du menu : `config/bureau-reglages.desktop` |
+| Paquet Debian | `construire-deb.sh` (ce dossier) → `paquet/` (non versionné) |
 | Fond animé (vidéo mémorisée, PID, réglage de pause) | `~/.config/fond-anime/video`, `pid`, `pause-auto` |
 | Prise de commande de mpv (pause automatique) | `/run/user/<numéro>/fond-anime-mpv.sock` |
 | Vidéos du fond animé | `fonds-animes/` (ce dossier) — les originaux sont restés dans `~/Videos/FOND_ECRAN/` ; `~/.local/share/bureau-reglages/fonds-animes/` si le dossier du logiciel n'est pas modifiable (installation dans `/usr`) |

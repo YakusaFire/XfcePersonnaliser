@@ -16,21 +16,22 @@ arreter_picom() {
 
 relancer_panneau() {
     sleep 1.5  # le nouveau compositeur est en place avant que le panneau se recrée
-    xfce4-panel -r >/dev/null 2>&1
+    # Sans panneau lancé, « xfce4-panel -r » attend sans fin : rien à relancer dans ce cas
+    if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel -r >/dev/null 2>&1; fi
 }
 
 case "${1:-}" in
     "")
         command -v picom >/dev/null || { echo "picom n'est pas installé. Lance : sudo apt install picom" >&2; exit 1; }
         # picom et le compositeur intégré d'xfwm4 ne peuvent pas tourner ensemble
-        xfconf-query -c xfwm4 -p /general/use_compositing -s false
+        xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
         arreter_picom
         setsid -f picom >/dev/null 2>&1
         relancer_panneau
         echo "picom relancé" ;;
     arreter)
         arreter_picom
-        xfconf-query -c xfwm4 -p /general/use_compositing -s true
+        xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true
         relancer_panneau
         echo "picom arrêté : xfwm4 reprend son compositeur intégré" ;;
     *)

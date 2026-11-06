@@ -58,12 +58,14 @@ start_compiz() {
 }
 
 start_xfwm4() {
-    pkill -x gtk-window-decorator || true
+    # Nom de plus de 15 caractères : « pkill -x » ne le trouverait jamais (le noyau le tronque)
+    pkill -f '^([^ ]*/)?gtk-window-decorator( |$)' || true
+    # -n -t bool : la propriété n'existe pas encore sur un compte neuf (xfwm4 garde ses défauts)
     if command -v picom >/dev/null; then
-        xfconf-query -c xfwm4 -p /general/use_compositing -s false
+        xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
     else
         # Sans picom, xfwm4 garde son compositeur intégré (ombres, transparence)
-        xfconf-query -c xfwm4 -p /general/use_compositing -s true
+        xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true
     fi
     setsid xfwm4 --replace &>/dev/null &
     sleep 2
@@ -76,7 +78,8 @@ start_xfwm4() {
 # Après un changement de WM, le dock (et sa zone de survol) se retrouve en
 # haut à gauche : on relance le panneau une fois le WM prêt.
 restart_panel() {
-    xfce4-panel --quit &>/dev/null || true
+    # Sans panneau lancé, « xfce4-panel --quit » (comme -r) attend sans fin : on ne l'appelle que s'il tourne
+    if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit &>/dev/null || true; fi
     for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
     setsid xfce4-panel &>/dev/null &
 }
@@ -100,7 +103,11 @@ case "${1:-}" in
         start_xfwm4
         # Avec picom, le fond animé repasse sous le vrai bureau
         "$ICI/fond-anime" actualiser >/dev/null 2>&1 || true
-        echo "xfwm4 + picom activés (aussi au prochain démarrage)" ;;
+        if command -v picom >/dev/null; then
+            echo "xfwm4 + picom activés (aussi au prochain démarrage)"
+        else
+            echo "xfwm4 activé avec son compositeur intégré : picom n'est pas installé"
+        fi ;;
     theme)
         sync_theme ;;
     "")

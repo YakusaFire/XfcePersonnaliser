@@ -52,7 +52,7 @@ Le script refuse proprement si lightdm-gtk-greeter manque.
 | ✅ | `PATH` complété par `~/.local/bin` | `bureau-reglages.py` | **Corrigé** : l'interface met le `bin/` voisin en tête du PATH ; elle appelle ses propres scripts, installée ou non. `bureau-profil` appelle `bureau-wm` par son chemin (avant : par le PATH). |
 | ✅ | `~/.config`, `~/.cache`, `~/.local/share` en dur | tous les scripts, interface, `installer.sh` | **Corrigé** : `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME`, `$XDG_DATA_HOME` s'ils sont définis (xfconf, picom, GTK et l'autostart les suivent aussi). Thèmes et icônes cherchés comme GTK, dans `$XDG_DATA_DIRS` (`/usr/local/share` compris). |
 | ✅ | `fonds/` et `fonds-animes/` dans le dossier du logiciel | interface | **Corrigé** : si ce dossier n'est pas modifiable (installé dans `/usr` par un paquet), `~/.local/share/bureau-reglages/fonds` et `fonds-animes`. Avant, l'interface plantait au démarrage (`PermissionError`). |
-| 🟢 | `installer.sh` crée des liens vers le dossier du projet | `installer.sh` | Bien pour développer ; pour les autres il faut une vraie installation (`/usr/bin`, `/usr/share/bureau-reglages/`, `/usr/share/applications/`). |
+| ✅ | `installer.sh` crée des liens vers le dossier du projet | `installer.sh` | Bien pour développer. **Corrigé** pour les autres : paquet `.deb` (`construire-deb.sh`), installé dans `/usr/share/xfce-personnaliser/`, `/usr/bin` et `/usr/share/applications/`. |
 
 ## 4. Dépendances : paquets Debian 13
 
@@ -72,10 +72,12 @@ Aucune n'est installée ni vérifiée par le projet aujourd'hui (seul `mpv` est 
 | Écran de connexion | `pkexec`, LightDM + lightdm-gtk-greeter | `pkexec`, `lightdm`, `lightdm-gtk-greeter` | facultatif |
 | Icônes, police | Papirus, Inter | `papirus-icon-theme`, `fonts-inter` | conseillé |
 
-Pour le paquet : `Depends:` pour les « oui », `Recommends:` pour picom, mpv, ffmpeg et les
-icônes, `Suggests:` pour Compiz et LightDM. xwinwrap : soit le compiler dans le paquet (petit
-programme C, licence MIT à vérifier), soit le remplacer en mode Compiz par la fenêtre de
-`fond-anime-video`.
+✅ Dans le paquet (`construire-deb.sh`) : `Depends:` pour les « oui » (plus `python3-gi-cairo`
+et `python3-cairo`), `Recommends:` pour picom (>= 12), mpv, ffmpeg, xdg-utils, exo-utils,
+papirus-icon-theme et fonts-inter, `Suggests:` pour Compiz, LightDM et pkexec. Tous ces
+noms existent dans Debian 13 (vérifié avec `apt-cache`). Reste xwinwrap : soit le compiler
+dans le paquet (petit programme C, licence à vérifier), soit le remplacer en mode Compiz par
+la fenêtre de `fond-anime-video`.
 
 ## 5. Versions : pourquoi Debian 13 au minimum
 
@@ -127,6 +129,23 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
 4. ✅ **Écran de connexion** *(fait le 6/11)* : plus d'échec quand un thème manque. Chaque
    élément est pris dans `/usr/share`, sinon copié depuis `~`, sinon remplacé (Adwaita sombre,
    fond uni…). Mode test `RACINE=dossier` (sans root). *(section 2)*
-5. **Paquet `.deb`** avec les dépendances, puis test dans une machine virtuelle Debian 13 +
-   XFCE neuve.
+5. ✅ **Paquet `.deb`** *(construit et testé le 6/11)* : `construire-deb.sh` le fabrique sans
+   root (`dpkg-deb --root-owner-group`). Vérifié : contenu et droits (root, 755/644), entrée du
+   menu (`desktop-file-validate`), dépendances résolues par `apt-get install --simulate`.
+   **Testé dans un Debian 13 neuf** (conteneur Docker, `tests/tester-paquet.sh`) : `apt`
+   installe le paquet et ses 223 dépendances (109 Mo) ; commandes, premier lancement de
+   l'interface sous Xvfb, refus propres, profils, écran de connexion et désinstallation
+   fonctionnent. Ce test a révélé et fait corriger :
+   - `xfce4-panel --quit` et `-r` attendent sans fin quand aucun panneau ne tourne :
+     `bureau-profil load`, `bureau-wm`, `relancer-picom` et l'interface restaient bloqués ;
+   - sur un compte neuf, `/general/use_compositing` n'existe pas : `xfconf-query -s` échouait
+     (`load` et `bureau-wm xfwm4` s'arrêtaient, picom ne pouvait pas démarrer) ;
+   - `pkill -x gtk-window-decorator` ne trouvait jamais le processus (nom tronqué à
+     15 caractères) : la décoration de Compiz restait lancée en repassant à xfwm4 ;
+   - liste des thèmes GTK vide sur un système neuf (Adwaita est intégré à GTK) ;
+   - copies de `bureau-modeles` en lecture seule si le modèle l'était.
+
+   **Reste** : un essai dans une vraie session XFCE (machine virtuelle, pour l'affichage),
+   passer `lintian` (absent ici), et choisir une licence (le dépôt n'en a pas : le fichier
+   `copyright` du paquet le dit).
 6. Facultatif : xwinwrap, Debian 12, traduction.

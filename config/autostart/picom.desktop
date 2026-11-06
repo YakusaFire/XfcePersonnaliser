@@ -2,6 +2,6 @@
 Type=Application
 Name=Picom
 Comment=Compositeur avec animations de fenêtres
-Exec=sh -c "command -v picom >/dev/null || exit 0; xfconf-query -c xfwm4 -p /general/use_compositing -s false; (sleep 4; xfce4-panel -r) & exec picom"
+Exec=sh -c "command -v picom >/dev/null || exit 0; xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false; (sleep 4; xfce4-panel -r) & exec picom"
 OnlyShowIn=XFCE;
 X-GNOME-Autostart-enabled=true

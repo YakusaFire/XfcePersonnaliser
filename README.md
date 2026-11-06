@@ -21,11 +21,15 @@ et une interface graphique qui regroupe le tout.
 | `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand picom ne tourne pas |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
 | `installer.sh` | Installe les commandes dans `~/.local/bin` et l'entrée du menu |
+| `construire-deb.sh` | Fabrique le paquet Debian `xfce-personnaliser` dans `paquet/` |
+| `tests/tester-paquet.sh` | Teste le paquet dans un Debian 13 neuf (conteneur Docker) |
 | `fonds/` | Images proposées pour le fond d'écran (non versionnées) ; `~/.local/share/bureau-reglages/fonds/` si le projet est installé en lecture seule |
 | `fonds-animes/` | Vidéos proposées pour le fond animé (non versionnées) ; même règle |
 | `commandes-bureau.md` | Mémo de toutes les commandes et des fichiers utilisés |
 
 ## Installation
+
+Pour l'utiliser et le modifier depuis ce dossier :
 
 ```bash
 ./installer.sh
@@ -33,6 +37,18 @@ et une interface graphique qui regroupe le tout.
 
 Les commandes de `~/.local/bin` sont des liens vers ce dossier : relancer `installer.sh`
 s'il est déplacé.
+
+Ou en paquet Debian (Debian 13 ou plus récent), installé pour tout le système avec ses
+dépendances :
+
+```bash
+./construire-deb.sh
+sudo apt install ./paquet/xfce-personnaliser_*_all.deb
+```
+
+Le paquet met le logiciel dans `/usr/share/xfce-personnaliser/`, les commandes dans
+`/usr/bin` et l'entrée « Personnalisation du bureau » dans le menu. Chaque utilisateur
+reçoit ses réglages de départ au premier lancement de l'interface.
 
 ## Dépendances
 

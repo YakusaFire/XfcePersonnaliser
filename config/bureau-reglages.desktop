@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Personnalisation du bureau
+Comment=Profils, thème, fond d'écran, effets et écran de connexion
+Exec=@EXEC@
+Icon=preferences-desktop-theme
+Terminal=false
+Categories=Settings;DesktopSettings;X-XFCE-SettingsDialog;X-XFCE-PersonalSettings;
+Keywords=thème;profil;catppuccin;picom;compiz;fond;wallpaper;
+StartupNotify=true
