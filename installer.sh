@@ -27,18 +27,9 @@ for f in "$ICI"/bin/*; do
 done
 lier "$ICI/bureau-reglages.py" bureau-reglages
 
-cat > "$MENU/bureau-reglages.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Personnalisation du bureau
-Comment=Profils, thème, fond d'écran, effets et écran de connexion
-Exec=$BIN/bureau-reglages
-Icon=preferences-desktop-theme
-Terminal=false
-Categories=Settings;DesktopSettings;X-XFCE-SettingsDialog;X-XFCE-PersonalSettings;
-Keywords=thème;profil;catppuccin;picom;compiz;fond;wallpaper;
-StartupNotify=true
-EOF
+# Entrée du menu : modèle commun avec le paquet Debian (construire-deb.sh), avec le chemin du lien
+EXEC="$BIN/bureau-reglages"
+sed "s|@EXEC@|${EXEC//&/\\&}|" "$ICI/config/bureau-reglages.desktop" > "$MENU/bureau-reglages.desktop"
 
 # Réglages de départ (picom, Alt+Tab, démarrage automatique) qui manquent encore
 "$ICI/bin/bureau-modeles"

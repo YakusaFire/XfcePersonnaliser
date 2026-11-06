@@ -69,6 +69,13 @@ GREETER_IMAGE = "catppuccin-mocha.png"
 GREETER_FOND = f"/usr/share/backgrounds/catppuccin/{GREETER_IMAGE}"  # copie faite par le script
 MEMO = os.path.join(ICI, "commandes-bureau.md")
 
+# Thèmes intégrés à GTK, sans dossier dans /usr/share/themes (Adwaita, HighContrast…) : sur un
+# système neuf, ce sont parfois les seuls (win32 ne sert que sous Windows)
+try:
+    THEMES_GTK_INTEGRES = {n.rstrip("/") for n in Gio.resources_enumerate_children("/org/gtk/libgtk/theme", 0)}
+    THEMES_GTK_INTEGRES.discard("win32")
+except GLib.Error:
+    THEMES_GTK_INTEGRES = {"Adwaita"}
 # Mêmes dossiers que GTK : ~/.themes ou ~/.icons, puis themes/ et icons/ de ~/.local/share et
 # de chaque dossier de $XDG_DATA_DIRS (/usr/local/share, /usr/share…)
 DONNEES = [GLib.get_user_data_dir(), *GLib.get_system_data_dirs()]
@@ -129,9 +136,14 @@ def probleme_session():
 RELANCE_XFWM4 = """
 setsid -f xfwm4 --replace >/dev/null 2>&1
 sleep 2
-xfce4-panel --quit >/dev/null 2>&1
+# Sans panneau lancé, « xfce4-panel --quit » attend sans fin : on ne l'appelle que s'il tourne
+if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit >/dev/null 2>&1; fi
 for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
 setsid -f xfce4-panel >/dev/null 2>&1
+"""
+# « xfce4-panel -r » attend sans fin si aucun panneau ne tourne : le panneau est alors démarré
+RELANCE_PANNEAU = """
+if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel -r; else setsid -f xfce4-panel >/dev/null 2>&1; fi
 """
 # relancer-picom relance aussi le panneau, sinon la zone de survol du dock part en haut à gauche
 RELANCE_PICOM = "relancer-picom"
@@ -242,8 +254,11 @@ def lister(dossiers):
 
 def themes(contenu):
     """Thèmes qui contiennent ce fichier ou dossier (gtk-3.0/gtk.css, xfwm4…)."""
-    return sorted({n for n, p in lister(DOSSIERS_THEMES)
-                   if n != GREETER_THEME and os.path.exists(os.path.join(p, contenu))}, key=str.casefold)
+    noms = {n for n, p in lister(DOSSIERS_THEMES)
+            if n != GREETER_THEME and os.path.exists(os.path.join(p, contenu))}
+    if contenu == "gtk-3.0/gtk.css":
+        noms |= THEMES_GTK_INTEGRES
+    return sorted(noms, key=str.casefold)
 
 
 def valeur_ini(texte, cle):
@@ -1229,7 +1244,8 @@ class Fenetre(Gtk.ApplicationWindow):
         else:
             texte = "Arrêté. Choisis une vidéo ci-dessous."
         if not e.programmes["ffmpeg"]:
-            texte += f" Sans ffmpeg, pas de miniatures ni de couleur de fond assortie : {a_installer(['ffmpeg'])}"
+            texte += ("" if texte.endswith(".") else ".") + \
+                f" Sans ffmpeg, pas de miniatures ni de couleur de fond assortie : {a_installer(['ffmpeg'])}"
         self.ligne_anime.desc.set_text(texte)
         # Un fond animé qui tourne peut toujours être arrêté
         possible = e.fond_anime or not e.raison_fond_anime()
@@ -1616,7 +1632,7 @@ class Fenetre(Gtk.ApplicationWindow):
                                                    fini="Picom relancé")))
         self.carte(b,
                    ligne("Relancer les panneaux", "Si le dock est mal placé ou n'affiche plus ses lanceurs.",
-                         bouton("Relancer", lambda: self.lancer("Relance des panneaux…", ["xfce4-panel", "-r"],
+                         bouton("Relancer", lambda: self.lancer("Relance des panneaux…", ["bash", "-c", RELANCE_PANNEAU],
                                                                 fini="Panneaux relancés"))),
                    ligne("Relancer le gestionnaire de fenêtres", "xfwm4 ou Compiz, selon le mode choisi.",
                          bouton("Relancer", self.relancer_wm)),

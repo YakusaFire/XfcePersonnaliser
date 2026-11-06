@@ -113,7 +113,7 @@ preparer_picom() {
     local dossier change=0
     dossier="$(dirname "$PICOM_CONF")"
     if ! cmp -s "$ICI/../config/picom/$SHADER" "$dossier/$SHADER"; then
-        cp "$ICI/../config/picom/$SHADER" "$dossier/$SHADER" || return 1
+        cp -f "$ICI/../config/picom/$SHADER" "$dossier/$SHADER" && chmod u+w "$dossier/$SHADER" || return 1
         change=1
     fi
     if ! grep -q "_FOND_ANIME@" "$PICOM_CONF"; then

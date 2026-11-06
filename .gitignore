@@ -10,3 +10,6 @@ __pycache__/
 
 # Notes de travail pour Claude Code, gardées en local
 CLAUDE.md
+
+# Paquet Debian construit par construire-deb.sh
+paquet/

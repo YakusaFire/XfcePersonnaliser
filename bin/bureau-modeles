@@ -36,7 +36,8 @@ chemin_commande() {
 copier() {
     [ -e "$2" ] && return 1
     mkdir -p "$(dirname "$2")"
-    cp "$MODELES/$1" "$2" && echo "Ajouté : ${2/#$HOME/\~}"
+    # u+w : la copie reste modifiable même si le modèle est en lecture seule (paquet…)
+    cp "$MODELES/$1" "$2" && chmod u+w "$2" && echo "Ajouté : ${2/#$HOME/\~}"
 }
 
 copier picom/picom.conf "$CONF/picom/picom.conf"

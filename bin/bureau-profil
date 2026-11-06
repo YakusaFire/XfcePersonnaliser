@@ -54,7 +54,8 @@ load() {
 
     # Le panneau doit être arrêté avant de toucher à ses lanceurs, sinon il
     # voit leurs fichiers disparaître et vide sa liste.
-    xfce4-panel --quit &>/dev/null || true
+    # Sans panneau lancé, « xfce4-panel --quit » (comme -r) attend sans fin : on ne l'appelle que s'il tourne
+    if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit &>/dev/null || true; fi
     for _ in $(seq 50); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
     flush_xfconf
     for c in "${CHANNELS[@]}"; do
@@ -68,7 +69,7 @@ load() {
     done
 
     # Relance des composants pour qu'ils relisent la config
-    xfconf-query -c xsettings -p /Net/ThemeName >/dev/null  # redémarre xfconfd
+    xfconf-query -c xsettings -p /Net/ThemeName >/dev/null 2>&1 || true  # redémarre xfconfd
     xfsettingsd --replace &>/dev/null & disown
     if [ "$("$ICI/bureau-wm")" = compiz ]; then
         # Compiz gère fenêtres et effets : on recale juste sa décoration
@@ -77,12 +78,12 @@ load() {
         # picom remplace le compositeur de xfwm4 : les deux ne peuvent pas tourner ensemble.
         # S'il a été désactivé (bureau-reglages), xfwm4 reprend son compositeur intégré.
         if command -v picom >/dev/null && ! grep -qx 'Hidden=true' "$CONF/autostart/picom.desktop" 2>/dev/null; then
-            xfconf-query -c xfwm4 -p /general/use_compositing -s false
+            xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
             pkill -x picom || true; sleep 0.3
             picom &>/dev/null & disown
         else
             pkill -x picom || true
-            xfconf-query -c xfwm4 -p /general/use_compositing -s true
+            xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true
         fi
         xfwm4 --replace &>/dev/null & disown
         sleep 2  # le panneau doit démarrer après le WM, sinon le dock se place en haut à gauche
