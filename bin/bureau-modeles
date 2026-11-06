@@ -1,0 +1,50 @@
+#!/bin/bash
+# bureau-modeles : met en place les réglages de départ du projet (modèles de config/)
+# qui manquent encore. Un fichier déjà présent n'est jamais écrasé.
+#   bureau-modeles   installe ce qui manque et l'affiche (rien à dire : n'affiche rien)
+#
+# Lancé par installer.sh, par bureau-reglages à son ouverture et par fond-anime.
+#   ~/.config/picom/picom.conf             réglages de picom 12 (ombres, coins, animations, règles)
+#   ~/.config/picom/fond-anime.glsl        shader du fond animé
+#   ~/.config/gtk-3.0/gtk.css.desactive    style du Alt+Tab, désactivé (à allumer dans l'interface)
+#   ~/.config/autostart/picom.desktop      picom au démarrage ; désactivé si picom ne tourne pas
+#   ~/.config/autostart/compiz.desktop     Compiz au démarrage ; désactivé hors du mode Compiz
+set -u
+ICI="$(dirname "$(realpath "$0")")"
+MODELES="$ICI/../config"
+CONF="$HOME/.config"
+
+case "${1:-}" in
+    "") ;;
+    *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
+
+# copier MODELE DESTINATION : seulement si la destination n'existe pas
+copier() {
+    [ -e "$2" ] && return 1
+    mkdir -p "$(dirname "$2")"
+    cp "$MODELES/$1" "$2" && echo "Ajouté : ${2/#$HOME/\~}"
+}
+
+copier picom/picom.conf "$CONF/picom/picom.conf"
+copier picom/fond-anime.glsl "$CONF/picom/fond-anime.glsl"
+
+# Alt+Tab : un gtk.css à soi (sans le style du projet) est laissé tel quel
+if [ ! -e "$CONF/gtk-3.0/gtk.css" ]; then
+    copier gtk-3.0/alttab.css "$CONF/gtk-3.0/gtk.css.desactive"
+fi
+
+# Démarrage automatique : l'entrée n'est active que si elle correspond à ce qui tourne déjà,
+# pour ne rien changer à la prochaine ouverture de session sans que l'utilisateur l'ait choisi
+AUTO="$CONF/autostart"
+if copier autostart/picom.desktop "$AUTO/picom.desktop"; then
+    pgrep -x picom >/dev/null || echo "Hidden=true" >> "$AUTO/picom.desktop"
+fi
+if copier autostart/compiz.desktop "$AUTO/compiz.desktop"; then
+    # Chemin de bureau-wm : le lien de ~/.local/bin s'il existe, sinon le script lui-même
+    wm="$(command -v bureau-wm || echo "$ICI/bureau-wm")"
+    wm="${wm//&/\\&}"  # « & » a un sens pour sed
+    sed -i "s|@BUREAU_WM@|$wm|" "$AUTO/compiz.desktop"
+    [ "$(cat "$CONF/bureau-wm" 2>/dev/null)" = compiz ] || echo "Hidden=true" >> "$AUTO/compiz.desktop"
+fi
+exit 0

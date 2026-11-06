@@ -1,0 +1,41 @@
+/* Alt+Tab (xfwm4) — Catppuccin Mocha */
+#xfwm-tabwin {
+  background-color: rgba(30, 30, 46, 0.92);
+  border: 1px solid rgba(203, 166, 247, 0.35);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  -XfwmTabwinWidget-icon-size: 48px;
+  -XfwmTabwinWidget-preview-size: 200px;
+  -XfwmTabwinWidget-listview-icon-size: 24px;
+}
+
+#xfwm-tabwin button {
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 8px;
+  margin: 4px;
+  box-shadow: none;
+  color: #a6adc8;
+  font-family: Inter;
+  font-weight: 500;
+  transition: all 120ms ease-out;
+}
+
+#xfwm-tabwin button:hover {
+  background-color: rgba(69, 71, 90, 0.6);
+  color: #cdd6f4;
+}
+
+#xfwm-tabwin button:checked,
+#xfwm-tabwin button:focus {
+  background-color: rgba(203, 166, 247, 0.18);
+  border-color: #cba6f7;
+  color: #cdd6f4;
+}
+
+#xfwm-tabwin label {
+  color: inherit;
+  padding-top: 6px;
+}

@@ -24,6 +24,11 @@ autostart() {
 # Décoration Compiz = thème metacity du thème GTK, boutons comme dans xfwm4
 sync_theme() {
     local gtk layout left right
+    # Schéma de Marco (paquet marco-common) : sans lui, la décoration garde son thème
+    if ! gsettings list-schemas 2>/dev/null | grep -qx org.mate.Marco.general; then
+        echo "Décoration de Compiz non recalée : il manque le paquet marco-common" >&2
+        return 0
+    fi
     gtk=$(xfconf-query -c xsettings -p /Net/ThemeName)
     if [ -d "$HOME/.themes/$gtk/metacity-1" ] || [ -d "/usr/share/themes/$gtk/metacity-1" ]; then
         gsettings set org.mate.Marco.general theme "$gtk"
@@ -47,10 +52,17 @@ start_compiz() {
 
 start_xfwm4() {
     pkill -x gtk-window-decorator || true
-    xfconf-query -c xfwm4 -p /general/use_compositing -s false
+    if command -v picom >/dev/null; then
+        xfconf-query -c xfwm4 -p /general/use_compositing -s false
+    else
+        # Sans picom, xfwm4 garde son compositeur intégré (ombres, transparence)
+        xfconf-query -c xfwm4 -p /general/use_compositing -s true
+    fi
     setsid xfwm4 --replace &>/dev/null &
     sleep 2
-    pgrep -x picom >/dev/null || (setsid picom &>/dev/null &)
+    if command -v picom >/dev/null && ! pgrep -x picom >/dev/null; then
+        (setsid picom &>/dev/null &)
+    fi
     restart_panel
 }
 
@@ -64,6 +76,11 @@ restart_panel() {
 
 case "${1:-}" in
     compiz)
+        for c in compiz gtk-window-decorator; do
+            command -v "$c" >/dev/null || {
+                echo "Compiz n'est pas installé. Lance : sudo apt install compiz-core compiz-gnome compiz-plugins" >&2
+                exit 1; }
+        done
         echo compiz > "$MODE_FILE"
         autostart compiz true; autostart picom false
         start_compiz

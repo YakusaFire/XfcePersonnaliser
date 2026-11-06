@@ -1,0 +1,38 @@
+#!/bin/bash
+# relancer-picom : relance picom (nouvelle configuration, shader…), puis le panneau.
+# Quand le compositeur change, la zone de survol du dock (masquage automatique) se
+# replace en haut à gauche de l'écran : relancer le panneau la remet sous le dock.
+#   relancer-picom           relance picom (et coupe le compositeur intégré d'xfwm4)
+#   relancer-picom arreter   arrête picom et rend la main au compositeur d'xfwm4
+set -u
+
+# Les programmes relancés héritent de ce dossier (comme dans bureau-wm)
+cd "$HOME"
+
+arreter_picom() {
+    pkill -x picom
+    for _ in $(seq 30); do pgrep -x picom >/dev/null || return 0; sleep 0.1; done
+}
+
+relancer_panneau() {
+    sleep 1.5  # le nouveau compositeur est en place avant que le panneau se recrée
+    xfce4-panel -r >/dev/null 2>&1
+}
+
+case "${1:-}" in
+    "")
+        command -v picom >/dev/null || { echo "picom n'est pas installé. Lance : sudo apt install picom" >&2; exit 1; }
+        # picom et le compositeur intégré d'xfwm4 ne peuvent pas tourner ensemble
+        xfconf-query -c xfwm4 -p /general/use_compositing -s false
+        arreter_picom
+        setsid -f picom >/dev/null 2>&1
+        relancer_panneau
+        echo "picom relancé" ;;
+    arreter)
+        arreter_picom
+        xfconf-query -c xfwm4 -p /general/use_compositing -s true
+        relancer_panneau
+        echo "picom arrêté : xfwm4 reprend son compositeur intégré" ;;
+    *)
+        sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

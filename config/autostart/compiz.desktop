@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Compiz
+Comment=Gestionnaire de fenêtres avec effet Génie
+Exec=sh -c "command -v compiz >/dev/null || exit 0; sleep 2; '@BUREAU_WM@' theme; compiz --replace ccp & sleep 2; gtk-window-decorator --replace & sleep 1; xfce4-panel -r"
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true

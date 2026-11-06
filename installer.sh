@@ -7,7 +7,7 @@ set -euo pipefail
 ICI=$(cd "$(dirname "$0")" && pwd)
 BIN="$HOME/.local/bin"
 MENU="$HOME/.local/share/applications"
-mkdir -p "$BIN" "$MENU" "$ICI/fonds-animes"
+mkdir -p "$BIN" "$MENU" "$ICI/fonds" "$ICI/fonds-animes"
 
 # Un vrai fichier déjà présent est gardé de côté plutôt qu'écrasé
 lier() {
@@ -19,8 +19,10 @@ lier() {
     ln -sfn "$1" "$cible"
 }
 
-chmod +x "$ICI"/bin/* "$ICI/bureau-reglages.py" "$ICI/greeter-catppuccin.sh"
+chmod +x "$ICI/bureau-reglages.py" "$ICI/greeter-catppuccin.sh"
 for f in "$ICI"/bin/*; do
+    [ -f "$f" ] || continue  # pas les dossiers (ex. __pycache__ laissé par Python)
+    chmod +x "$f"
     lier "$f" "$(basename "$f")"
 done
 lier "$ICI/bureau-reglages.py" bureau-reglages
@@ -37,6 +39,9 @@ Categories=Settings;DesktopSettings;X-XFCE-SettingsDialog;X-XFCE-PersonalSetting
 Keywords=thème;profil;catppuccin;picom;compiz;fond;wallpaper;
 StartupNotify=true
 EOF
+
+# Réglages de départ (picom, Alt+Tab, démarrage automatique) qui manquent encore
+"$ICI/bin/bureau-modeles"
 
 echo "Commandes installées dans $BIN : $(cd "$ICI/bin" && echo *) bureau-reglages"
 echo "Entrée du menu : Paramètres → Personnalisation du bureau"
