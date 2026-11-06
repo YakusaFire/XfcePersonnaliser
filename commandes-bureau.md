@@ -14,7 +14,7 @@ Une fenêtre qui regroupe tout ce mémo. Menu **Paramètres → Personnalisation
 | Profils | Appliquer, enregistrer ou mettre à la corbeille un profil ; annuler le dernier chargement |
 | Apparence | Thème des applications, barre de titre, icônes, curseur et sa taille, polices |
 | Fond d'écran | Choisir l'image du bureau |
-| Fond animé | Lancer / arrêter le fond animé, lancement à l'ouverture de session ; voir les vidéos de `fonds-animes/` avec un aperçu animé, en choisir une, en ajouter ou en retirer |
+| Fond animé | Lancer / arrêter le fond animé, lancement à l'ouverture de session, pause automatique ; voir les vidéos de `fonds-animes/` avec un aperçu animé, en choisir une, en ajouter ou en retirer |
 | Fenêtres et effets | xfwm4 + picom ou Compiz ; picom, animations, ombres, fondu, arrondi des coins, Alt+Tab stylisé |
 | Écran de connexion | Mettre ou retirer le style Catppuccin (mot de passe demandé), aperçu en verrouillant |
 | Outils | Relancer les panneaux, le gestionnaire de fenêtres ou picom ; ouvrir ce mémo |
@@ -24,6 +24,11 @@ Une fenêtre qui regroupe tout ce mémo. Menu **Paramètres → Personnalisation
 > Picom désactivé : xfwm4 reprend son compositeur intégré et `bureau-profil load` ne le
 > relance plus ; `bureau-wm xfwm4` le réactive.
 > Alt+Tab stylisé désactivé : `gtk.css` est renommé en `gtk.css.desactive`.
+> **Programmes manquants** : une option dont le programme n'est pas installé (picom, mpv,
+> Compiz, ccsm, LightDM…) est grisée, avec la commande `sudo apt install …` à lancer ; la liste
+> est relue à chaque retour sur la fenêtre. Sans ffmpeg, pas de miniatures des vidéos.
+> Fond animé : il faut mpv, plus picom (vidéo sous le bureau) ou xwinwrap ; en mode Compiz,
+> xwinwrap seulement. Un bandeau prévient si la session n'est pas XFCE ou est sous Wayland.
 
 ---
 
@@ -71,6 +76,9 @@ bureau-profil save mon-theme
 | `bureau-wm theme` | Recale la barre de titre de Compiz sur le thème actuel |
 
 Le choix est conservé au redémarrage.
+`bureau-wm compiz` refuse si Compiz n'est pas installé (et donne la commande `apt`) ;
+`bureau-wm xfwm4` sans picom laisse xfwm4 garder son compositeur intégré. Sans le paquet
+`marco-common`, `bureau-wm theme` ne recale pas la barre de titre et le dit.
 
 ```bash
 bureau-wm compiz
@@ -97,8 +105,16 @@ lanceur ou un dossier, glisser depuis Thunar, menu du clic droit). Pour ça :
    La règle ne s'applique que pendant le fond animé, quand la fenêtre du bureau porte la
    propriété `_FOND_ANIME` : un fond d'écran normal n'est jamais touché.
 
+**Pause automatique** (avec picom, activée par défaut) : chaque seconde, `fond-anime-video`
+regarde si la vidéo se voit. Elle se met en pause quand une fenêtre est en plein écran ou
+agrandie sur l'espace de travail courant, quand l'écran est éteint ou quand la session est
+verrouillée, et repart dès que le bureau se revoit. mpv passe alors d'environ 6 % d'un cœur
+à 0,1 %, et la carte graphique ne décode plus la vidéo. Réglage : `fond-anime pause-auto on|off`,
+ou l'interrupteur de l'onglet « Fond animé ».
+
 **Sans picom (mode Compiz)**, la vidéo recouvre le bureau et `fond-anime-icones` réaffiche les
-icônes par-dessus : elles s'ouvrent au double-clic mais ne se déplacent pas.
+icônes par-dessus : elles s'ouvrent au double-clic mais ne se déplacent pas, et il n'y a pas
+de pause automatique.
 
 | Commande | Effet |
 |---|---|
@@ -108,6 +124,8 @@ icônes par-dessus : elles s'ouvrent au double-clic mais ne se déplacent pas.
 | `fond-anime actualiser` | Replace le fond animé dans le bon mode (fait tout seul après un changement de profil, de gestionnaire de fenêtres ou de picom) |
 | `fond-anime auto on` | Lance le fond animé à chaque ouverture de session |
 | `fond-anime auto off` | Ne le lance plus au démarrage |
+| `fond-anime pause-auto on` | Met la vidéo en pause tant qu'elle ne se voit pas (réglage par défaut) |
+| `fond-anime pause-auto off` | La vidéo tourne tout le temps, même cachée |
 | `fond-anime --help` | Affiche l'aide |
 | `pgrep -af "^mpv .*fond-anime-mpv"` | Vérifie s'il tourne (aucune ligne = arrêté) |
 | `fond-anime-fond etat` | Dit si le fond de xfdesktop est masqué (`masqué`) ou normal |
@@ -137,8 +155,11 @@ fond-anime auto off
 > (entrée `fond-anime-nettoyage.desktop`, créée et retirée toute seule).
 > La règle de picom et le shader sont ajoutés tout seuls à `~/.config/picom/` s'ils manquent
 > (par exemple après le chargement d'un ancien profil).
-> Dépendances : `mpv`, `xrandr`, `xwinwrap` (`~/.local/bin/xwinwrap`, pour le mode Compiz) ;
-> `ffmpeg` / `ffprobe` pour les miniatures et les durées affichées dans l'onglet.
+> Dépendances : `mpv`, `xrandr` ; `picom` pour la vidéo sous le bureau, sinon `xwinwrap`
+> (`~/.local/bin/xwinwrap`, absent des dépôts Debian ; seul possible en mode Compiz) ;
+> `ffmpeg` / `ffprobe` pour la couleur de masquage, les miniatures et les durées de l'onglet.
+> S'il ne peut pas se lancer, `fond-anime` dit ce qui manque (picom absent, arrêté ou sans
+> bloc `rules`, xwinwrap absent) et remet le fond d'écran.
 
 ---
 
@@ -167,7 +188,9 @@ Retoucher le style : `/usr/share/themes/Catppuccin-Mocha-Greeter/gtk-3.0/gtk.css
 | `ccsm` | Panneau de réglages de Compiz (effets, durées, raccourcis…) |
 | `xfce4-panel -r` | Relance les panneaux (si le dock est mal placé, ou s'il ne réapparaît qu'en passant la souris en haut de l'écran) |
 | `xfwm4 --replace &` | Relance le gestionnaire de fenêtres d'XFCE |
-| `picom &` | Relance picom (mode xfwm4 uniquement) |
+| `relancer-picom` | Relance picom puis le panneau (mode xfwm4) : à utiliser au lieu de relancer picom à la main, sinon le dock ne réapparaît plus qu'en haut de l'écran |
+| `relancer-picom arreter` | Arrête picom, rend la main au compositeur d'xfwm4 et relance le panneau |
+| `bureau-modeles` | Met en place les réglages de départ du dossier `config/` qui manquent (`picom.conf`, shader, style du Alt+Tab désactivé, `picom.desktop`, `compiz.desktop`) ; n'écrase jamais rien. Lancé aussi par `installer.sh`, à l'ouverture de l'interface et par `fond-anime` |
 
 ---
 
@@ -206,13 +229,14 @@ sudo apt install mpv   # fond animé
 
 | Élément | Chemin |
 |---|---|
-| Scripts | `bin/bureau-profil`, `bin/bureau-wm` (ce dossier), liens dans `~/.local/bin/` |
+| Scripts | `bin/bureau-profil`, `bin/bureau-wm`, `bin/relancer-picom`, `bin/bureau-modeles` (ce dossier), liens dans `~/.local/bin/` |
 | Fond animé (programmes) | `bin/fond-anime`, `bin/fond-anime-video`, `bin/fond-anime-fond`, `bin/fond-anime-icones` (ce dossier), liens dans `~/.local/bin/` ; `~/.local/bin/xwinwrap` |
 | Fond animé (shader picom) | `config/picom/fond-anime.glsl` (ce dossier), copié dans `~/.config/picom/` |
 | Fond animé (vrai fond gardé de côté) | `~/.config/fond-anime/fond-xfdesktop.json` (pendant la vidéo) |
 | Sauvegarde d'avant le passage sous le bureau | `~/.config/fond-anime/sauvegarde-avant-vrai-bureau/` (`picom.conf`, fond de xfdesktop) |
 | Installation des liens et du menu | `installer.sh` (ce dossier) |
-| Fond animé (vidéo mémorisée, PID) | `~/.config/fond-anime/video`, `~/.config/fond-anime/pid` |
+| Fond animé (vidéo mémorisée, PID, réglage de pause) | `~/.config/fond-anime/video`, `pid`, `pause-auto` |
+| Prise de commande de mpv (pause automatique) | `/run/user/<numéro>/fond-anime-mpv.sock` |
 | Vidéos du fond animé | `fonds-animes/` (ce dossier) — les originaux sont restés dans `~/Videos/FOND_ECRAN/` |
 | Miniatures et infos des vidéos (cache) | `~/.cache/bureau-reglages/` |
 | Interface graphique | `bureau-reglages.py` (ce dossier), lien `~/.local/bin/bureau-reglages` — relancer `installer.sh` si le dossier est déplacé |
@@ -222,7 +246,8 @@ sudo apt install mpv   # fond animé
 | Thèmes GTK / fenêtres | `~/.themes/` |
 | Icônes et curseurs | `~/.local/share/icons/` |
 | Polices (JetBrains Mono) | `~/.local/share/fonts/` |
-| Fonds d'écran | `~/Pictures/Wallpapers/` |
+| Fonds d'écran | `fonds/` (ce dossier, non versionné) : galerie de l'interface, « Ajouter des images… » y copie ; les originaux sont restés dans `~/Pictures/Wallpapers/`, où pointent encore les profils |
+| Réglages de départ (modèles) | `config/picom/picom.conf`, `config/gtk-3.0/alttab.css`, `config/autostart/picom.desktop` et `compiz.desktop` (ce dossier), copiés par `bureau-modeles` |
 | Config picom | `~/.config/picom/picom.conf` |
 | Style du Alt+Tab | `~/.config/gtk-3.0/gtk.css` |
 | Config Compiz | `~/.config/compiz/compizconfig/Default.ini` |

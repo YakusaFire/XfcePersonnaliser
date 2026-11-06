@@ -33,8 +33,12 @@ for d in Papirus Papirus-Dark "$CURSORS"; do
     [ -d "/usr/share/icons/$d" ] || cp -a "$U_HOME/.local/share/icons/$d" /usr/share/icons/
 done
 
+# Image prise dans le dossier fonds/ du projet (ancien emplacement en secours)
+ICI=$(dirname "$(realpath "$0")")
+SOURCE_FOND="$ICI/fonds/catppuccin-mocha.png"
+[ -f "$SOURCE_FOND" ] || SOURCE_FOND="$U_HOME/Pictures/Wallpapers/catppuccin-mocha.png"
 mkdir -p "$(dirname "$WALL")"
-cp "$U_HOME/Pictures/Wallpapers/catppuccin-mocha.png" "$WALL"
+cp "$SOURCE_FOND" "$WALL"
 
 chown -R root:root "/usr/share/themes/$GTK_THEME" /usr/share/icons/Papirus /usr/share/icons/Papirus-Dark \
     "/usr/share/icons/$CURSORS" "$(dirname "$WALL")"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # fond-anime : fond d'écran animé à partir d'une vidéo (XFCE / X11)
-# Dépendances : mpv, xwinwrap (~/.local/bin/xwinwrap), xrandr
+# Dépendances : mpv, xrandr, ffmpeg (couleur de masquage) ; picom pour la vidéo sous le bureau,
+# sinon xwinwrap (absent des dépôts Debian, cherché aussi dans ~/.local/bin)
 #
 #   fond-anime VIDEO.mp4     lance la vidéo en fond d'écran (et la mémorise)
 #   fond-anime               relance la dernière vidéo mémorisée
@@ -8,11 +9,14 @@
 #   fond-anime actualiser    replace le fond animé s'il tourne (après un changement de
 #                            profil ou de gestionnaire de fenêtres), sinon remet le fond d'écran
 #   fond-anime auto on|off   active / désactive le lancement à l'ouverture de session
+#   fond-anime pause-auto on|off  met la vidéo en pause tant qu'elle ne se voit pas
+#                            (fenêtre en plein écran ou agrandie, écran éteint, session
+#                            verrouillée) ; activé par défaut
 #
 # Avec picom, la vidéo passe sous le vrai bureau (xfdesktop) dont picom rend le fond
 # transparent : les icônes restent celles d'XFCE (déplacer, supprimer, créer…).
 # Sans picom (Compiz), la vidéo recouvre le bureau et fond-anime-icones réaffiche
-# les icônes par-dessus, sans pouvoir les déplacer.
+# les icônes par-dessus, sans pouvoir les déplacer ; pas de pause automatique.
 
 set -u
 ICI="$(dirname "$(realpath "$0")")"
@@ -26,6 +30,9 @@ NETTOYAGE="$HOME/.config/autostart/fond-anime-nettoyage.desktop"
 XWINWRAP="$(command -v xwinwrap || echo "$HOME/.local/bin/xwinwrap")"
 PICOM_CONF="$HOME/.config/picom/picom.conf"
 SHADER=fond-anime.glsl
+# Prise de commande de mpv : fond-anime-video s'en sert pour la pause automatique
+PRISE="${XDG_RUNTIME_DIR:-$CONF_DIR}/fond-anime-mpv.sock"
+PAUSE_AUTO="$CONF_DIR/pause-auto"
 
 mkdir -p "$CONF_DIR"
 
@@ -88,6 +95,7 @@ picom_pret() {
 # Shader et règle xfdesktop dans picom.conf, ajoutés ou mis à jour s'il le faut (profil
 # plus ancien…). La règle ne vaut que si le bureau porte la propriété _FOND_ANIME.
 preparer_picom() {
+    [ -f "$PICOM_CONF" ] || "$ICI/bureau-modeles" >/dev/null
     [ -f "$PICOM_CONF" ] && grep -q '^rules = (' "$PICOM_CONF" || return 1
     local dossier change=0
     dossier="$(dirname "$PICOM_CONF")"
@@ -104,11 +112,9 @@ preparer_picom() {
         change=1
     fi
     if [ "$change" = 1 ]; then
-        # picom ne relit pas un shader modifié : on le relance
-        pkill -x picom
-        sleep 0.5
-        setsid -f picom >/dev/null 2>&1
-        sleep 1
+        # picom est relancé pour prendre le nouveau shader ; le panneau ensuite, sinon la
+        # zone de survol du dock se retrouve en haut à gauche
+        "$ICI/relancer-picom" >/dev/null
     fi
 }
 
@@ -125,9 +131,6 @@ start() {
     if ! command -v mpv >/dev/null; then
         echo "mpv n'est pas installé. Lance : sudo apt install mpv" >&2; exit 1
     fi
-    if [[ ! -x "$XWINWRAP" ]]; then
-        echo "xwinwrap introuvable ($XWINWRAP)" >&2; exit 1
-    fi
     realpath "$video" > "$SAVED"
 
     # taille totale de l'écran (tous moniteurs confondus)
@@ -143,6 +146,8 @@ start() {
         --no-input-default-bindings --input-vo-keyboard=no
         --cursor-autohide=no
         --stop-screensaver=no
+        --profile=fast
+        --input-ipc-server="$PRISE"
         --really-quiet
         "$(cat "$SAVED")")
 
@@ -156,6 +161,17 @@ start() {
         masquer_fond "$(couleur_video "$(cat "$SAVED")")"
         echo "Fond animé lancé derrière les icônes du bureau : $(cat "$SAVED")"
     else
+        if [[ ! -x "$XWINWRAP" ]]; then
+            if [ "$("$ICI/bureau-wm" 2>/dev/null)" = compiz ]; then
+                echo "Avec Compiz, le fond animé a besoin de xwinwrap (absent des dépôts Debian)." >&2
+            elif ! command -v picom >/dev/null; then
+                echo "Il faut picom pour placer la vidéo sous le bureau. Lance : sudo apt install picom" >&2
+            else
+                echo "picom ne tourne pas, ou ~/.config/picom/picom.conf n'a pas de bloc « rules = ( … ) » (picom 12) ;" \
+                     "sans picom prêt, le fond animé a besoin de xwinwrap." >&2
+            fi
+            restaurer_fond; exit 1
+        fi
         restaurer_fond
         # -fdt : fenêtre de type "bureau" (sous toutes les applis, au-dessus du fond XFCE)
         "$XWINWRAP" -g "$geom" -fdt -b -s -st -sp -nf -ni -un -- "${lecteur[@]}" >/dev/null 2>&1 &
@@ -194,7 +210,15 @@ case "${1:-}" in
         if en_cours && [[ -f "$SAVED" ]]; then start "$(cat "$SAVED")"
         else restaurer_fond; fi ;;
     auto)  autostart "${2:-}" ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+    pause-auto)
+        # Lu chaque seconde par fond-anime-video : pas besoin de relancer la vidéo
+        case "${2:-}" in
+            on|off) echo "$2" > "$PAUSE_AUTO"
+                    if [ "$2" = on ]; then echo "Pause automatique activée."
+                    else echo "Pause automatique désactivée."; fi ;;
+            *) echo "Usage : fond-anime pause-auto on|off" >&2; exit 1 ;;
+        esac ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
     "")
         if [[ -f "$SAVED" ]]; then start "$(cat "$SAVED")"
         else echo "Aucune vidéo mémorisée. Usage : fond-anime VIDEO.mp4" >&2; exit 1; fi ;;

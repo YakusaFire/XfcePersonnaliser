@@ -5,15 +5,22 @@
 # Comme xwinwrap, elle lance le lecteur en remplaçant WID par l'identifiant de la fenêtre :
 #   fond-anime-video LxH+X+Y -- mpv -wid WID … VIDEO
 # La fenêtre reste sous le bureau et se ferme quand le lecteur s'arrête.
+# Pause automatique (si mpv a --input-ipc-server=PRISE) : la vidéo s'arrête tant qu'elle ne se
+# voit pas — fenêtre en plein écran ou agrandie sur l'espace de travail courant, écran éteint,
+# session verrouillée — et reprend ensuite ; désactivée si ~/.config/fond-anime/pause-auto
+# contient « off » (fond-anime pause-auto off).
 
 import ctypes
+import json
+import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
-from ctypes import POINTER, byref, c_char_p, c_int, c_long, c_uint, c_ulong, c_void_p
+from ctypes import POINTER, byref, c_char_p, c_int, c_long, c_ubyte, c_uint, c_ulong, c_ushort, c_void_p
 
 x11 = ctypes.CDLL("libX11.so.6")
 x11.XOpenDisplay.argtypes = [c_char_p]
@@ -46,7 +53,21 @@ x11.XCreateWindow.argtypes = [c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c
                               c_void_p, c_ulong, POINTER(XSetWindowAttributes)]
 x11.XCreateWindow.restype = c_ulong
 x11.XSetClassHint.argtypes = [c_void_p, c_ulong, POINTER(XClassHint)]
+x11.XInternAtom.argtypes = [c_void_p, c_char_p, c_int]
+x11.XInternAtom.restype = c_ulong
+x11.XGetWindowProperty.argtypes = [c_void_p, c_ulong, c_ulong, c_long, c_long, c_int, c_ulong, POINTER(c_ulong),
+                                   POINTER(c_int), POINTER(c_ulong), POINTER(c_ulong), POINTER(POINTER(c_ulong))]
 CW_BACK_PIXEL, CW_OVERRIDE_REDIRECT, INPUT_OUTPUT = 1 << 1, 1 << 9, 1
+try:
+    xext = ctypes.CDLL("libXext.so.6")
+    xext.DPMSInfo.argtypes = [c_void_p, POINTER(c_ushort), POINTER(c_ubyte)]
+except OSError:
+    xext = None
+
+REGLAGE_PAUSE = os.path.expanduser("~/.config/fond-anime/pause-auto")
+ATOMES = ("_NET_CURRENT_DESKTOP", "_NET_CLIENT_LIST", "_NET_WM_DESKTOP", "_NET_WM_STATE",
+          "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE_MAXIMIZED_VERT", "_NET_WM_STATE_MAXIMIZED_HORZ",
+          "_NET_WM_STATE_HIDDEN")
 
 # Une fenêtre peut disparaître entre deux appels : on ignore l'erreur au lieu de quitter
 GESTIONNAIRE = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)(lambda _d, _e: 0)
@@ -65,6 +86,77 @@ def tout_en_bas(dpy, racine, fenetre):
     bas = liste[0] if n.value else fenetre
     x11.XFree(liste)
     return bas == fenetre
+
+
+def propriete(dpy, fenetre, atome):
+    """Valeurs d'une propriété X de format 32 ([] si elle n'existe pas)."""
+    type_, format_, n, reste = c_ulong(), c_int(), c_ulong(), c_ulong()
+    donnees = POINTER(c_ulong)()
+    if x11.XGetWindowProperty(dpy, fenetre, atome, 0, 4096, 0, 0, byref(type_), byref(format_),
+                              byref(n), byref(reste), byref(donnees)) != 0:
+        return []
+    valeurs = [donnees[i] & 0xFFFFFFFF for i in range(n.value)] if donnees and format_.value == 32 else []
+    if donnees:
+        x11.XFree(donnees)
+    return valeurs
+
+
+def bureau_cache(dpy, racine, atomes):
+    """Une fenêtre non réduite, en plein écran ou agrandie, sur l'espace de travail courant."""
+    courant = (propriete(dpy, racine, atomes["_NET_CURRENT_DESKTOP"]) or [0])[0]
+    agrandie = {atomes["_NET_WM_STATE_MAXIMIZED_VERT"], atomes["_NET_WM_STATE_MAXIMIZED_HORZ"]}
+    for client in propriete(dpy, racine, atomes["_NET_CLIENT_LIST"]):
+        bureau = (propriete(dpy, client, atomes["_NET_WM_DESKTOP"]) or [courant])[0]
+        etats = set(propriete(dpy, client, atomes["_NET_WM_STATE"]))
+        if (bureau in (courant, 0xFFFFFFFF) and atomes["_NET_WM_STATE_HIDDEN"] not in etats
+                and (atomes["_NET_WM_STATE_FULLSCREEN"] in etats or agrandie <= etats)):
+            return True
+    return False
+
+
+def ecran_eteint(dpy):
+    """Écran mis en veille par DPMS."""
+    niveau, actif = c_ushort(), c_ubyte()
+    return bool(xext and xext.DPMSInfo(dpy, byref(niveau), byref(actif)) and actif.value and niveau.value)
+
+
+def session_ailleurs():
+    """Session verrouillée (l'écran de connexion est sur une autre console) ou autre console affichée."""
+    console = os.environ.get("XDG_VTNR")
+    try:
+        with open("/sys/class/tty/tty0/active") as f:
+            return bool(console) and f.read().strip() != f"tty{console}"
+    except OSError:
+        return False
+
+
+def pause_auto():
+    try:
+        with open(REGLAGE_PAUSE) as f:
+            return f.read().strip() != "off"
+    except OSError:
+        return True
+
+
+def commande_mpv(prise, *commande):
+    """Envoie une commande à mpv par sa prise IPC ; renvoie sa réponse (None s'il ne répond pas)."""
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(1)
+            s.connect(prise)
+            s.sendall(json.dumps({"command": list(commande)}).encode() + b"\n")
+            recu = b""
+            while b'"error"' not in recu:  # mpv peut envoyer des événements avant la réponse
+                bloc = s.recv(4096)
+                if not bloc:
+                    return None
+                recu += bloc
+    except OSError:
+        return None
+    try:
+        return json.loads(next(l for l in recu.splitlines() if b'"error"' in l))
+    except ValueError:
+        return None
 
 
 def main():
@@ -89,6 +181,8 @@ def main():
     x11.XFlush(dpy)
 
     commande = [hex(fenetre) if a == "WID" else a for a in args[2:]]
+    prise = next((a.split("=", 1)[1] for a in commande if a.startswith("--input-ipc-server=")), None)
+    atomes = {nom: x11.XInternAtom(dpy, nom.encode(), 0) for nom in ATOMES}
     lecteur = subprocess.Popen(AVEC_PARENT + commande, stdin=subprocess.DEVNULL)
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: lecteur.terminate())
@@ -96,6 +190,14 @@ def main():
         if not tout_en_bas(dpy, racine, fenetre):
             x11.XLowerWindow(dpy, fenetre)
             x11.XFlush(dpy)
+        if prise:
+            cachee = pause_auto() and (bureau_cache(dpy, racine, atomes) or ecran_eteint(dpy)
+                                       or session_ailleurs())
+            # On relit l'état réel de mpv à chaque passage : une pause demandée pendant son
+            # démarrage peut se perdre, elle est alors simplement redemandée
+            reponse = commande_mpv(prise, "get_property", "pause")
+            if reponse and reponse.get("data") != cachee:
+                commande_mpv(prise, "set_property", "pause", cachee)
         time.sleep(1)
     x11.XDestroyWindow(dpy, fenetre)
     x11.XCloseDisplay(dpy)

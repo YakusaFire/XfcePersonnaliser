@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -39,9 +40,12 @@ PICOM_CONF = os.path.join(CONFIG, "picom", "picom.conf")
 ALTTAB_CSS = os.path.join(CONFIG, "gtk-3.0", "gtk.css")
 ALTTAB_OFF = ALTTAB_CSS + ".desactive"
 VIDEO_ANIMEE = os.path.join(CONFIG, "fond-anime", "video")
+PAUSE_AUTO = os.path.join(CONFIG, "fond-anime", "pause-auto")  # « off » : pas de pause automatique
+PRISE_MPV = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or os.path.join(CONFIG, "fond-anime"),
+                         "fond-anime-mpv.sock")  # prise de commande du mpv du fond animé
 VIDEOS_FOND = os.path.join(ICI, "fonds-animes")  # vidéos proposées pour le fond animé
-FONDS = os.path.join(HOME, "Pictures", "Wallpapers")
-VIDEOS = os.path.join(HOME, "Videos")
+FONDS = os.path.join(ICI, "fonds")  # images proposées pour le fond d'écran
+MODELES = os.path.join(ICI, "bin", "bureau-modeles")  # réglages de départ (config/), sans rien écraser
 CACHE = os.path.join(HOME, ".cache", "bureau-reglages")  # miniatures et infos des vidéos
 GREETER_SCRIPT = os.path.join(ICI, "greeter-catppuccin.sh")
 GREETER_CONF = "/etc/lightdm/lightdm-gtk-greeter.conf"
@@ -58,6 +62,45 @@ os.environ["PATH"] = os.path.join(HOME, ".local/bin") + os.pathsep + os.environ.
 # L'aperçu (mpv) reçoit SIGTERM si l'interface s'arrête brutalement
 AVEC_PARENT = ["setpriv", "--pdeathsig", "TERM"] if shutil.which("setpriv") else []
 
+# Programmes dont dépendent les réglages, avec le paquet Debian qui les fournit : ce qui
+# manque est grisé dans l'interface, avec la commande pour l'installer
+PAQUETS = {
+    "xfconf-query": "xfconf", "xfwm4": "xfwm4", "xfdesktop": "xfdesktop4", "xfce4-panel": "xfce4-panel",
+    "xfce4-appearance-settings": "xfce4-settings", "xrandr": "x11-xserver-utils",
+    "picom": "picom", "mpv": "mpv", "ffmpeg": "ffmpeg",
+    "compiz": "compiz-core", "gtk-window-decorator": "compiz-gnome", "ccsm": "compizconfig-settings-manager",
+    "pkexec": "pkexec", "lightdm-gtk-greeter": "lightdm-gtk-greeter", "dm-tool": "lightdm",
+}
+# lightdm-gtk-greeter est rangé dans /usr/sbin, souvent absent du PATH d'un utilisateur
+CHEMIN_PROGRAMMES = os.pathsep.join([os.environ["PATH"], "/usr/local/sbin", "/usr/sbin", "/sbin"])
+COMPIZ = ("compiz", "gtk-window-decorator")
+GREETER = ("pkexec", "lightdm-gtk-greeter")
+
+
+def installe(commande):
+    return bool(shutil.which(commande, path=CHEMIN_PROGRAMMES))
+
+
+def a_installer(manquants):
+    """« sudo apt install … » pour les programmes manquants (paquets sans doublon)."""
+    paquets = dict.fromkeys(PAQUETS.get(c, c) for c in manquants)
+    return "sudo apt install " + " ".join(paquets)
+
+
+def probleme_session():
+    """Texte d'avertissement si le bureau n'est pas XFCE sous X11 (None si tout va bien)."""
+    bureau = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    type_session = os.environ.get("XDG_SESSION_TYPE", "")
+    if type_session == "wayland" or (os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("DISPLAY")):
+        return ("Session Wayland : picom, Compiz et le fond animé ne marchent qu'en session X11. "
+                "Choisis la session XFCE sous X11 sur l'écran de connexion.")
+    if "XFCE" not in bureau.upper().split(":"):
+        return (f"Ce bureau n'est pas XFCE ({bureau or 'bureau inconnu'}) : la plupart des réglages "
+                "n'auront aucun effet.")
+    if not installe("xfconf-query"):
+        return f"xfconf-query est introuvable : les réglages d'XFCE ne peuvent pas être lus. {a_installer(['xfconf-query'])}"
+    return None
+
 # xfwm4 ne relit gtk.css (style du Alt+Tab) qu'à son démarrage. Comme dans bureau-wm,
 # le panneau est relancé ensuite, sinon le dock se place en haut à gauche.
 RELANCE_XFWM4 = """
@@ -67,13 +110,12 @@ xfce4-panel --quit >/dev/null 2>&1
 for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
 setsid -f xfce4-panel >/dev/null 2>&1
 """
-RELANCE_PICOM = "pkill -x picom; sleep 0.3; setsid -f picom >/dev/null 2>&1"
-# picom et le compositeur intégré d'xfwm4 ne peuvent pas tourner ensemble. Le fond animé
-# change de mode avec picom (vidéo sous le vrai bureau, ou par-dessus sans picom)
+# relancer-picom relance aussi le panneau, sinon la zone de survol du dock part en haut à gauche
+RELANCE_PICOM = "relancer-picom"
+# Le fond animé change de mode avec picom (vidéo sous le vrai bureau, ou par-dessus sans picom)
 SUIVRE_FOND_ANIME = "; fond-anime actualiser >/dev/null 2>&1 || true"
-PICOM_ON = "xfconf-query -c xfwm4 -p /general/use_compositing -s false; " + RELANCE_PICOM + SUIVRE_FOND_ANIME
-PICOM_OFF = ("pkill -x picom; sleep 0.3; xfconf-query -c xfwm4 -p /general/use_compositing -s true"
-             + SUIVRE_FOND_ANIME)
+PICOM_ON = RELANCE_PICOM + SUIVRE_FOND_ANIME
+PICOM_OFF = "relancer-picom arreter" + SUIVRE_FOND_ANIME
 
 CSS = b"""
 .barre-laterale { background-color: alpha(currentColor, 0.04); border-right: 1px solid alpha(currentColor, 0.1); }
@@ -111,12 +153,18 @@ def entier(valeur, defaut):
 
 
 def processus(*motif):
-    return subprocess.run(["pgrep", *motif], capture_output=True).returncode == 0
+    try:
+        return subprocess.run(["pgrep", *motif], capture_output=True).returncode == 0
+    except OSError:
+        return False
 
 
 def xfconf(canal):
-    """Propriétés d'un canal xfconf : {chemin: valeur}."""
-    r = subprocess.run(["xfconf-query", "-c", canal, "-lv"], capture_output=True, text=True)
+    """Propriétés d'un canal xfconf : {chemin: valeur} (vide si xfconf manque)."""
+    try:
+        r = subprocess.run(["xfconf-query", "-c", canal, "-lv"], capture_output=True, text=True)
+    except OSError:
+        return {}
     props = {}
     for ligne in r.stdout.splitlines():
         prop, _, valeur = ligne.partition(" ")
@@ -127,8 +175,11 @@ def xfconf(canal):
 
 def xfconf_regler(canal, prop, valeur, type_="string"):
     cmd = ["xfconf-query", "-c", canal, "-p", prop]
-    if subprocess.run(cmd + ["-s", str(valeur)], capture_output=True).returncode:
-        subprocess.run(cmd + ["-n", "-t", type_, "-s", str(valeur)], capture_output=True)
+    try:
+        if subprocess.run(cmd + ["-s", str(valeur)], capture_output=True).returncode:
+            subprocess.run(cmd + ["-n", "-t", type_, "-s", str(valeur)], capture_output=True)
+    except OSError:
+        pass
 
 
 def autostart_actif(nom, sans_fichier):
@@ -188,12 +239,39 @@ def fonds_disponibles():
     return [os.path.join(FONDS, n) for n in noms if n.lower().endswith(EXT_IMAGES)]
 
 
+def script_copie(copies):
+    """Commande bash qui copie chaque (source, destination)."""
+    return " && ".join(f"cp -- {shlex.quote(src)} {shlex.quote(dest)}" for src, dest in copies)
+
+
 def videos_disponibles():
     try:
         noms = sorted(os.listdir(VIDEOS_FOND), key=str.casefold)
     except OSError:
         return []
     return [os.path.join(VIDEOS_FOND, n) for n in noms if n.lower().endswith(EXT_VIDEOS)]
+
+
+def video_en_pause():
+    """Le mpv du fond animé est-il en pause (pause automatique) ? Question posée par sa prise IPC."""
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(0.5)
+            s.connect(PRISE_MPV)
+            s.sendall(b'{"command": ["get_property", "pause"]}\n')
+            recu = b""
+            while b'"error"' not in recu:  # mpv peut envoyer des événements avant la réponse
+                bloc = s.recv(4096)
+                if not bloc:
+                    return False
+                recu += bloc
+    except OSError:
+        return False
+    ligne = next((l for l in recu.splitlines() if b'"error"' in l), b"{}")
+    try:
+        return json.loads(ligne).get("data") is True
+    except ValueError:
+        return False
 
 
 def meme_fichier(a, b):
@@ -346,7 +424,7 @@ class Etat:
         self.profils = {nom: lire_profil(nom) for nom in noms_profils()}
         self.profil_actif = self.trouver_profil_actif()
         self.picom_en_cours = processus("-x", "picom")
-        self.picom_actif = autostart_actif("picom", self.picom_en_cours)
+        self.picom_actif = autostart_actif("picom", self.picom_en_cours) and (self.picom_en_cours or installe("picom"))
         self.picom = ConfigPicom()
         self.alttab = "xfwm-tabwin" in lire(ALTTAB_CSS)
         self.alttab_dispo = self.alttab or os.path.exists(ALTTAB_OFF)
@@ -354,8 +432,27 @@ class Etat:
         self.fond_anime = processus("-f", "^mpv .*fond-anime-mp[v]")
         self.fond_anime_bureau = processus("-f", "^python3 [^ ]*/fond-anime-vide[o] ")  # vidéo sous le bureau
         self.fond_anime_auto = autostart_actif("fond-anime", False)
+        self.pause_auto = lire(PAUSE_AUTO).strip() != "off"
+        self.video_en_pause = self.fond_anime and video_en_pause()
         self.video = lire(VIDEO_ANIMEE).strip()
         self.videos = videos_disponibles()
+        # Programmes présents, relus à chaque actualisation : un paquet installé entre-temps est vu
+        self.programmes = {c: installe(c) for c in [*PAQUETS, "xwinwrap"]}
+
+    def manquants(self, *commandes):
+        return [c for c in commandes if not self.programmes[c]]
+
+    def raison_fond_anime(self):
+        """Pourquoi le fond animé ne peut pas se lancer (None s'il le peut)."""
+        if not self.programmes["mpv"]:
+            return f"Il faut mpv pour lire la vidéo : {a_installer(['mpv'])}"
+        if self.programmes["xwinwrap"]:
+            return None  # vidéo par-dessus le bureau, avec ou sans picom
+        if self.mode == "compiz":
+            return "Avec Compiz, le fond animé a besoin de xwinwrap, absent des dépôts Debian."
+        if not self.programmes["picom"]:
+            return f"Il faut picom pour placer la vidéo sous le bureau : {a_installer(['picom'])}"
+        return None
 
     def trouver_profil_actif(self):
         """Profil dont le thème, les icônes et la barre de titre sont ceux du bureau."""
@@ -541,12 +638,16 @@ class Fenetre(Gtk.ApplicationWindow):
         corps.pack_start(self.barre_laterale(pages), False, False, 0)
         corps.pack_start(self.pile, True, True, 0)
         racine = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        probleme = probleme_session()
+        if probleme:
+            racine.pack_start(self.bandeau(probleme), False, False, 0)
         racine.pack_start(corps, True, True, 0)
         racine.pack_start(self.barre_statut(), False, False, 0)
         self.add(racine)
         racine.show_all()
 
         self.connect("notify::is-active", self.au_retour)
+        self.installer_modeles()
         self.actualiser()
 
     # --- Structure
@@ -595,6 +696,16 @@ class Fenetre(Gtk.ApplicationWindow):
         contenu.pack_start(self.texte_statut, True, True, 0)
         barre.pack_start(contenu, True, True, 0)
         return barre
+
+    def bandeau(self, texte):
+        """Avertissement en haut de la fenêtre (session qui n'est pas XFCE sous X11…)."""
+        boite = Gtk.Box(spacing=12, margin_start=12, margin_end=12, margin_top=10, margin_bottom=4)
+        boite.get_style_context().add_class("avertissement")
+        contenu = Gtk.Box(spacing=12, margin_start=16, margin_end=16, margin_top=10, margin_bottom=10)
+        contenu.pack_start(Gtk.Image.new_from_icon_name("dialog-warning-symbolic", Gtk.IconSize.MENU), False, False, 0)
+        contenu.pack_start(etiquette(texte), True, True, 0)
+        boite.pack_start(contenu, True, True, 0)
+        return boite
 
     def page(self, nom, titre, description):
         boite = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14,
@@ -827,7 +938,8 @@ class Fenetre(Gtk.ApplicationWindow):
 
     def page_fond(self):
         b = self.page("fond", "Fond d'écran",
-                      "Clique sur une image pour la mettre en fond sur tous les écrans et espaces de travail.")
+                      "Clique sur une image pour la mettre en fond sur tous les écrans et espaces de travail. "
+                      f"Les images sont rangées dans {FONDS.replace(HOME, '~', 1)}.")
         self.alerte_anime = Gtk.Box(spacing=12, no_show_all=True)
         self.alerte_anime.get_style_context().add_class("avertissement")
         contenu = Gtk.Box(spacing=12, margin_start=16, margin_end=12, margin_top=10, margin_bottom=10)
@@ -846,9 +958,14 @@ class Fenetre(Gtk.ApplicationWindow):
         self.galerie.get_style_context().add_class("galerie")
         self.galerie.connect("child-activated", lambda _g, enfant: self.choisir_fond(self.chemins_galerie[enfant]))
         actions = Gtk.Box(spacing=8, margin_start=14, margin_end=14, margin_top=10, margin_bottom=10)
-        actions.pack_end(bouton("Autre image…", self.autre_fond), False, False, 0)
+        actions.pack_end(bouton("Ajouter des images…", self.ajouter_fonds), False, False, 0)
         actions.pack_end(bouton("Ouvrir le dossier", lambda: self.detacher("xdg-open", FONDS)), False, False, 0)
         self.carte(b, self.galerie, actions)
+
+        # La galerie suit les images ajoutées ou retirées à la main
+        os.makedirs(FONDS, exist_ok=True)
+        self.moniteur_fonds = Gio.File.new_for_path(FONDS).monitor_directory(Gio.FileMonitorFlags.NONE, None)
+        self.moniteur_fonds.connect("changed", lambda *_: self.plus_tard("fonds", 800, self.actualiser))
 
     def remplir_galerie(self, e):
         fichiers = fonds_disponibles()
@@ -900,27 +1017,50 @@ class Fenetre(Gtk.ApplicationWindow):
     def choisir_fond(self, chemin):
         cles = [k for k in self.etat.bureau if k.endswith("/last-image")]
         if not cles:
-            ecrans = re.findall(r"^\s*\d+:.*\s(\S+)$", subprocess.run(
-                ["xrandr", "--listmonitors"], capture_output=True, text=True).stdout, re.M)
+            try:
+                sortie = subprocess.run(["xrandr", "--listmonitors"], capture_output=True, text=True).stdout
+            except OSError:
+                sortie = ""
+            ecrans = re.findall(r"^\s*\d+:.*\s(\S+)$", sortie, re.M)
             cles = [f"/backdrop/screen0/monitor{nom}/workspace0/last-image" for nom in ecrans]
         for cle in cles:
             xfconf_regler("xfce4-desktop", cle, chemin)
         self.statut(f"Fond d'écran : {os.path.basename(chemin)}", "emblem-ok-symbolic")
         self.actualiser()
 
-    def autre_fond(self):
-        d = Gtk.FileChooserDialog(title="Choisir une image", transient_for=self, action=Gtk.FileChooserAction.OPEN)
-        d.add_buttons("Annuler", Gtk.ResponseType.CANCEL, "Choisir", Gtk.ResponseType.ACCEPT)
+    def ajouter_fonds(self):
+        """Copie les images choisies dans le dossier des fonds ; une seule image devient le fond."""
+        fichiers, copies = self.choisir_copies("Ajouter des images", "Images", "image/*",
+                                               GLib.UserDirectory.DIRECTORY_PICTURES, FONDS)
+        if len(fichiers) == 1 and not copies:  # image déjà rangée dans le dossier
+            self.choisir_fond(fichiers[0])
+        elif copies:
+            n, s = len(copies), "s" if len(copies) > 1 else ""
+            self.lancer(f"Copie de {n} image{s} dans le dossier…", ["bash", "-c", script_copie(copies)],
+                        fini=f"{n} image{s} ajoutée{s}",
+                        apres=(lambda: self.choisir_fond(copies[0][1])) if len(fichiers) == 1 else None)
+
+    def choisir_copies(self, titre, nom_filtre, mime, depart, cible):
+        """Fichiers choisis, et (source, destination) de ceux à copier dans le dossier cible."""
+        d = Gtk.FileChooserDialog(title=titre, transient_for=self,
+                                  action=Gtk.FileChooserAction.OPEN, select_multiple=True)
+        d.add_buttons("Annuler", Gtk.ResponseType.CANCEL, "Ajouter", Gtk.ResponseType.ACCEPT)
         filtre = Gtk.FileFilter()
-        filtre.set_name("Images")
-        filtre.add_mime_type("image/*")
+        filtre.set_name(nom_filtre)
+        filtre.add_mime_type(mime)
         d.add_filter(filtre)
-        if os.path.isdir(FONDS):
-            d.set_current_folder(FONDS)
-        chemin = d.get_filename() if d.run() == Gtk.ResponseType.ACCEPT else None
+        # Dossier Images ou Vidéos de l'utilisateur, quel que soit son nom (~/Images, ~/Pictures…)
+        dossier = GLib.get_user_special_dir(depart)
+        if dossier and os.path.isdir(dossier):
+            d.set_current_folder(dossier)
+        fichiers = d.get_filenames() if d.run() == Gtk.ResponseType.ACCEPT else []
         d.destroy()
-        if chemin:
-            self.choisir_fond(chemin)
+        copies = []
+        for source in fichiers:
+            if os.path.dirname(os.path.realpath(source)) != os.path.realpath(cible):
+                copies.append((source, destination_libre(cible, os.path.basename(source),
+                                                         [dest for _, dest in copies])))
+        return fichiers, copies
 
     # --- Page Fond animé
 
@@ -932,8 +1072,17 @@ class Fenetre(Gtk.ApplicationWindow):
             "Réglage du démarrage automatique…", ["fond-anime", "auto", "on" if actif else "off"],
             fini="Fond animé lancé à chaque ouverture de session" if actif
             else "Fond animé plus lancé au démarrage"))
+        self.switch_pause_auto = self.interrupteur(lambda actif: self.lancer(
+            "Réglage de la pause automatique…", ["fond-anime", "pause-auto", "on" if actif else "off"],
+            fini="Pause automatique activée" if actif else "Pause automatique désactivée"))
         self.ligne_anime = ligne("Fond animé", "", self.switch_anime)
-        self.carte(b, self.ligne_anime, ligne("Lancer à l'ouverture de session", None, self.switch_anime_auto))
+        self.carte(b, self.ligne_anime,
+                   ligne("Lancer à l'ouverture de session", None, self.switch_anime_auto),
+                   ligne("Pause automatique",
+                         "La vidéo s'arrête quand une fenêtre est en plein écran ou agrandie, quand l'écran "
+                         "s'éteint ou que la session est verrouillée, et reprend dès que le bureau se revoit. "
+                         "Économise le processeur, la carte graphique et la batterie (avec picom).",
+                         self.switch_pause_auto))
 
         # Aperçu de la vidéo choisie dans la liste
         self.apercu = Apercu(384, 216)
@@ -990,16 +1139,27 @@ class Fenetre(Gtk.ApplicationWindow):
     def maj_anime(self, e):
         self.switch_anime.set_active(e.fond_anime)
         self.switch_anime_auto.set_active(e.fond_anime_auto)
+        self.switch_pause_auto.set_active(e.pause_auto)
         nom = os.path.basename(e.video) if e.video else ""
         if e.fond_anime:
             icones = ("icônes du bureau utilisables normalement" if e.fond_anime_bureau
                       else "icônes en lecture seule, car picom ne tourne pas")
             texte = f"Lancé avec « {nom} » : {icones}."
+            if e.video_en_pause:
+                texte += " En pause tant que le bureau est caché."
+        elif e.raison_fond_anime():
+            texte = f"Indisponible. {e.raison_fond_anime()}"
         elif nom:
             texte = f"Arrêté. À l'activation : « {nom} »."
         else:
             texte = "Arrêté. Choisis une vidéo ci-dessous."
+        if not e.programmes["ffmpeg"]:
+            texte += f" Sans ffmpeg, pas de miniatures ni de couleur de fond assortie : {a_installer(['ffmpeg'])}"
         self.ligne_anime.desc.set_text(texte)
+        # Un fond animé qui tourne peut toujours être arrêté
+        possible = e.fond_anime or not e.raison_fond_anime()
+        self.switch_anime.set_sensitive(possible)
+        self.switch_anime_auto.set_sensitive(possible or e.fond_anime_auto)
         self.remplir_videos(e)
 
     def remplir_videos(self, e):
@@ -1130,13 +1290,16 @@ class Fenetre(Gtk.ApplicationWindow):
             self.badge_apercu.hide()
             self.apercu.lire(None)
         self.bouton_utiliser.set_label("Déjà en fond d'écran" if en_fond else "Mettre en fond d'écran")
-        self.bouton_utiliser.set_sensitive(dispo and not en_fond)
+        self.bouton_utiliser.set_sensitive(dispo and not en_fond and not e.raison_fond_anime())
+        self.bouton_utiliser.set_tooltip_text(e.raison_fond_anime())
         # Seules les vidéos du dossier peuvent partir à la corbeille depuis ici
         self.bouton_retirer.set_sensitive(
             dispo and os.path.dirname(os.path.realpath(chemin)) == os.path.realpath(VIDEOS_FOND))
 
     def utiliser_video(self, chemin):
-        if chemin:
+        if chemin and self.etat.raison_fond_anime():  # double-clic dans la liste
+            self.erreur("Fond animé indisponible", self.etat.raison_fond_anime())
+        elif chemin:
             self.lancer("Lancement du fond animé…", ["fond-anime", chemin],
                         fini=f"Fond animé : {os.path.basename(chemin)}")
 
@@ -1172,27 +1335,12 @@ class Fenetre(Gtk.ApplicationWindow):
         self.actualiser()
 
     def ajouter_videos(self):
-        d = Gtk.FileChooserDialog(title="Ajouter des vidéos", transient_for=self,
-                                  action=Gtk.FileChooserAction.OPEN, select_multiple=True)
-        d.add_buttons("Annuler", Gtk.ResponseType.CANCEL, "Ajouter", Gtk.ResponseType.ACCEPT)
-        filtre = Gtk.FileFilter()
-        filtre.set_name("Vidéos")
-        filtre.add_mime_type("video/*")
-        d.add_filter(filtre)
-        if os.path.isdir(VIDEOS):
-            d.set_current_folder(VIDEOS)
-        fichiers = d.get_filenames() if d.run() == Gtk.ResponseType.ACCEPT else []
-        d.destroy()
-        copies = []
-        for source in fichiers:
-            if os.path.dirname(os.path.realpath(source)) != os.path.realpath(VIDEOS_FOND):
-                copies.append((source, destination_libre(VIDEOS_FOND, os.path.basename(source),
-                                                         [dest for _, dest in copies])))
+        _, copies = self.choisir_copies("Ajouter des vidéos", "Vidéos", "video/*",
+                                        GLib.UserDirectory.DIRECTORY_VIDEOS, VIDEOS_FOND)
         if not copies:
             return
         n, s = len(copies), "s" if len(copies) > 1 else ""
-        script = " && ".join(f"cp -- {shlex.quote(src)} {shlex.quote(dest)}" for src, dest in copies)
-        self.lancer(f"Copie de {n} vidéo{s} dans le dossier…", ["bash", "-c", script],
+        self.lancer(f"Copie de {n} vidéo{s} dans le dossier…", ["bash", "-c", script_copie(copies)],
                     fini=f"{n} vidéo{s} ajoutée{s}", apres=lambda: setattr(self, "video_choisie", copies[-1][1]))
 
     # --- Page Fenêtres et effets
@@ -1233,27 +1381,27 @@ class Fenetre(Gtk.ApplicationWindow):
         self.ligne_arrondi = ligne("Arrondi des coins", "En pixels, 0 pour des coins droits.", self.arrondi)
         self.ligne_alttab = ligne("Alt+Tab stylisé", "Sélecteur de fenêtres aux couleurs du profil "
                                                     "(~/.config/gtk-3.0/gtk.css).", self.switch_alttab)
+        self.ligne_picom = ligne("Picom", "", self.switch_picom)
         self.carte_effets = self.carte(
-            b,
-            ligne("Picom", "Compositeur qui dessine ombres, coins arrondis et animations. "
-                           "Désactivé, xfwm4 reprend son compositeur intégré.", self.switch_picom),
-            self.ligne_animations, self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi, self.ligne_alttab)
+            b, self.ligne_picom, self.ligne_animations, self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi, self.ligne_alttab)
 
         self.section(b, "Compiz", "Avec Compiz uniquement.")
+        self.ligne_ccsm = ligne("Réglages avancés", "", bouton("Ouvrir", lambda: self.detacher("ccsm")))
         self.carte_compiz = self.carte(
             b,
             ligne("Barre de titre", "Recale la décoration de Compiz sur le thème, les boutons et la police "
                                     "d'xfwm4.",
                   bouton("Recaler", lambda: self.lancer("Mise à jour de la barre de titre…", ["bureau-wm", "theme"],
                                                         fini="Barre de titre recalée sur le thème"))),
-            ligne("Réglages avancés", "Effets, durées et raccourcis de Compiz (ccsm).",
-                  bouton("Ouvrir", lambda: self.detacher("ccsm"))))
+            self.ligne_ccsm)
 
     def choix_wm(self, groupe, mode, titre, description):
         radio = Gtk.RadioButton.new_from_widget(groupe)
         textes = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_start=6)
         textes.pack_start(etiquette(f"<b>{titre}</b>", markup=True), False, False, 0)
-        textes.pack_start(etiquette(description, dim=True), False, False, 0)
+        radio.desc = etiquette(description, dim=True)
+        radio.description = description  # remise quand le programme manquant est installé
+        textes.pack_start(radio.desc, False, False, 0)
         radio.add(textes)
         radio.connect("toggled", self.radio_wm, mode, titre)
         boite = Gtk.Box(margin_start=16, margin_end=16, margin_top=12, margin_bottom=12)
@@ -1267,10 +1415,23 @@ class Fenetre(Gtk.ApplicationWindow):
     def maj_fenetres(self, e):
         compiz = e.mode == "compiz"
         (self.radio_compiz if compiz else self.radio_xfwm4).set_active(True)
+        for radio, programmes in ((self.radio_xfwm4, ("xfwm4",)), (self.radio_compiz, COMPIZ)):
+            manque = e.manquants(*programmes)
+            radio.set_sensitive(not manque or radio.get_active())
+            radio.desc.set_text(f"Pas installé : {a_installer(manque)}" if manque else radio.description)
         self.carte_effets.set_sensitive(not compiz)
         self.carte_compiz.set_sensitive(compiz)
+        self.ligne_ccsm.set_sensitive(e.programmes["ccsm"])
+        self.ligne_ccsm.desc.set_text("Effets, durées et raccourcis de Compiz (ccsm)." if e.programmes["ccsm"]
+                                      else f"Pas installé : {a_installer(['ccsm'])}")
         conf = e.picom
         self.switch_picom.set_active(e.picom_actif)
+        # picom arrêté et pas installé : rien à allumer (s'il tourne encore, on peut l'arrêter)
+        self.ligne_picom.set_sensitive(e.programmes["picom"] or e.picom_en_cours)
+        self.ligne_picom.desc.set_text(
+            "Compositeur qui dessine ombres, coins arrondis et animations. Désactivé, xfwm4 reprend "
+            "son compositeur intégré." if e.programmes["picom"]
+            else f"Pas installé : xfwm4 garde son compositeur intégré. {a_installer(['picom'])}")
         self.switch_animations.set_active(bool(conf.animations()))
         self.switch_ombres.set_active(conf.valeur("shadow") == "true")
         self.switch_fondu.set_active(conf.valeur("fading") == "true")
@@ -1279,6 +1440,9 @@ class Fenetre(Gtk.ApplicationWindow):
         for l in (self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi):
             l.set_sensitive(e.picom_actif and bool(conf.texte))
         self.switch_alttab.set_active(e.alttab)
+        self.ligne_alttab.desc.set_text(
+            "Sélecteur de fenêtres aux couleurs du profil (~/.config/gtk-3.0/gtk.css)." if e.alttab_dispo else
+            "Ton ~/.config/gtk-3.0/gtk.css a déjà son propre style : celui du projet n'y est pas mis.")
         self.ligne_alttab.set_sensitive(e.alttab_dispo)
 
     def regler_picom(self, actif):
@@ -1303,7 +1467,9 @@ class Fenetre(Gtk.ApplicationWindow):
             self.erreur("Impossible d'enregistrer la configuration de picom", str(err))
             return
         if self.etat.picom_en_cours:
-            subprocess.run(["pkill", "-USR1", "-x", "picom"])  # picom se réinitialise et relit sa config
+            # picom relit sa configuration en redémarrant ; relancer-picom remet ensuite le panneau
+            self.lancer("Application du réglage de picom…", ["relancer-picom"], fini=message)
+            return
         self.statut(message, "emblem-ok-symbolic")
         self.actualiser()
 
@@ -1328,21 +1494,32 @@ class Fenetre(Gtk.ApplicationWindow):
                       "(droits administrateur).")
         self.switch_greeter = self.interrupteur(self.regler_greeter)
         self.ligne_greeter = ligne("Style Catppuccin Mocha", "", self.switch_greeter)
-        self.carte(b, self.ligne_greeter,
-                   ligne("Aperçu", "Verrouille la session pour afficher l'écran de connexion.",
-                         bouton("Verrouiller", lambda: self.detacher("dm-tool", "lock"))))
+        self.ligne_verrou = ligne("Aperçu", "", bouton("Verrouiller", lambda: self.detacher("dm-tool", "lock")))
+        self.carte(b, self.ligne_greeter, self.ligne_verrou)
 
     def maj_connexion(self, e):
-        dispo = os.path.isfile(GREETER_SCRIPT)
+        manque = e.manquants(*GREETER)
+        # Gestionnaire de connexion choisi sur ce système (gdm3, sddm… ne lisent pas ce style)
+        dm = os.path.basename(lire("/etc/X11/default-display-manager").strip())
+        autre_dm = dm not in ("", "lightdm")
+        dispo = os.path.isfile(GREETER_SCRIPT) and not manque and (not autre_dm or e.greeter)
         self.switch_greeter.set_active(e.greeter)
         self.ligne_greeter.set_sensitive(dispo)
-        if not dispo:
+        if not os.path.isfile(GREETER_SCRIPT):
             texte = f"Script introuvable : {GREETER_SCRIPT}"
+        elif autre_dm and not e.greeter:
+            texte = f"L'écran de connexion de ce système est {dm}, pas LightDM : ce style ne s'y applique pas."
+        elif manque:
+            texte = f"Le style s'applique à l'écran de connexion LightDM (lightdm-gtk-greeter). {a_installer(manque)}"
         elif e.greeter:
             texte = "Activé : fond Catppuccin, fenêtre arrondie à bordure mauve, icônes Papirus."
         else:
             texte = "Désactivé : style d'origine de l'écran de connexion."
         self.ligne_greeter.desc.set_text(texte)
+        self.ligne_verrou.set_sensitive(e.programmes["dm-tool"])
+        self.ligne_verrou.desc.set_text("Verrouille la session pour afficher l'écran de connexion."
+                                        if e.programmes["dm-tool"] else
+                                        "Demande LightDM (commande dm-tool) comme écran de connexion.")
 
     def regler_greeter(self, actif):
         self.lancer("Écran de connexion : en attente du mot de passe…",
@@ -1366,13 +1543,13 @@ class Fenetre(Gtk.ApplicationWindow):
                          bouton("Relancer", self.relancer_wm)),
                    self.ligne_relance_picom)
         self.ligne_memo = ligne("Mémo des commandes", MEMO, bouton("Ouvrir", lambda: self.detacher("xdg-open", MEMO)))
-        self.carte(b,
-                   ligne("Paramètres d'apparence d'XFCE", "Tous les réglages d'origine d'XFCE.",
-                         bouton("Ouvrir", lambda: self.detacher("xfce4-appearance-settings"))),
-                   self.ligne_memo)
+        self.ligne_param_xfce = ligne("Paramètres d'apparence d'XFCE", "Tous les réglages d'origine d'XFCE.",
+                                      bouton("Ouvrir", lambda: self.detacher("xfce4-appearance-settings")))
+        self.carte(b, self.ligne_param_xfce, self.ligne_memo)
 
     def maj_outils(self, e):
         self.ligne_relance_picom.set_sensitive(e.mode != "compiz" and e.picom_actif)
+        self.ligne_param_xfce.set_sensitive(e.programmes["xfce4-appearance-settings"])
         self.ligne_memo.set_sensitive(os.path.isfile(MEMO))
 
     def relancer_wm(self):
@@ -1382,6 +1559,19 @@ class Fenetre(Gtk.ApplicationWindow):
             self.lancer("Relance de xfwm4…", ["bash", "-c", RELANCE_XFWM4], fini="xfwm4 relancé")
 
     # --- État, commandes et messages
+
+    def installer_modeles(self):
+        """Réglages de départ du projet qui manquent (premier lancement) : rien n'est écrasé."""
+        try:
+            r = subprocess.run([MODELES], capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            return
+        ajouts = [l for l in r.stdout.splitlines() if l.startswith("Ajouté")]
+        if ajouts:
+            n = len(ajouts)
+            self.statut(f"{n} réglage{'s' if n > 1 else ''} de départ mis en place : "
+                        + ", ".join(os.path.basename(l.split(": ", 1)[-1]) for l in ajouts),
+                        "emblem-ok-symbolic")
 
     def actualiser(self):
         """Relit la configuration du bureau et la recopie dans les widgets."""
