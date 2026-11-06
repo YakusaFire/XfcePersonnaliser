@@ -122,7 +122,7 @@ de pause automatique.
 | `fond-anime` | Relance la dernière vidéo mémorisée (réaffiche aussi les icônes) |
 | `fond-anime stop` | Arrête le fond animé : le fond d'écran normal réapparaît |
 | `fond-anime actualiser` | Replace le fond animé dans le bon mode (fait tout seul après un changement de profil, de gestionnaire de fenêtres ou de picom) |
-| `fond-anime auto on` | Lance le fond animé à chaque ouverture de session |
+| `fond-anime auto on` | Lance le fond animé à chaque ouverture de session (l'entrée de démarrage reçoit le chemin complet de la commande, car le PATH de la session ne contient pas `~/.local/bin`) |
 | `fond-anime auto off` | Ne le lance plus au démarrage |
 | `fond-anime pause-auto on` | Met la vidéo en pause tant qu'elle ne se voit pas (réglage par défaut) |
 | `fond-anime pause-auto off` | La vidéo tourne tout le temps, même cachée |
@@ -227,6 +227,9 @@ sudo apt install mpv   # fond animé
 
 ## Emplacements des fichiers
 
+`~/.config`, `~/.cache` et `~/.local/share` valent `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME` et
+`$XDG_DATA_HOME` quand ces variables sont définies (sur ce PC, elles pointent au même endroit).
+
 | Élément | Chemin |
 |---|---|
 | Scripts | `bin/bureau-profil`, `bin/bureau-wm`, `bin/relancer-picom`, `bin/bureau-modeles` (ce dossier), liens dans `~/.local/bin/` |
@@ -237,7 +240,7 @@ sudo apt install mpv   # fond animé
 | Installation des liens et du menu | `installer.sh` (ce dossier) |
 | Fond animé (vidéo mémorisée, PID, réglage de pause) | `~/.config/fond-anime/video`, `pid`, `pause-auto` |
 | Prise de commande de mpv (pause automatique) | `/run/user/<numéro>/fond-anime-mpv.sock` |
-| Vidéos du fond animé | `fonds-animes/` (ce dossier) — les originaux sont restés dans `~/Videos/FOND_ECRAN/` |
+| Vidéos du fond animé | `fonds-animes/` (ce dossier) — les originaux sont restés dans `~/Videos/FOND_ECRAN/` ; `~/.local/share/bureau-reglages/fonds-animes/` si le dossier du logiciel n'est pas modifiable (installation dans `/usr`) |
 | Miniatures et infos des vidéos (cache) | `~/.cache/bureau-reglages/` |
 | Interface graphique | `bureau-reglages.py` (ce dossier), lien `~/.local/bin/bureau-reglages` — relancer `installer.sh` si le dossier est déplacé |
 | Entrée du menu | `~/.local/share/applications/bureau-reglages.desktop` |
@@ -246,7 +249,7 @@ sudo apt install mpv   # fond animé
 | Thèmes GTK / fenêtres | `~/.themes/` |
 | Icônes et curseurs | `~/.local/share/icons/` |
 | Polices (JetBrains Mono) | `~/.local/share/fonts/` |
-| Fonds d'écran | `fonds/` (ce dossier, non versionné) : galerie de l'interface, « Ajouter des images… » y copie ; les originaux sont restés dans `~/Pictures/Wallpapers/`, où pointent encore les profils |
+| Fonds d'écran | `fonds/` (ce dossier, non versionné) : galerie de l'interface, « Ajouter des images… » y copie ; les originaux sont restés dans `~/Pictures/Wallpapers/`, où pointent encore les profils ; `~/.local/share/bureau-reglages/fonds/` si le dossier du logiciel n'est pas modifiable |
 | Réglages de départ (modèles) | `config/picom/picom.conf`, `config/gtk-3.0/alttab.css`, `config/autostart/picom.desktop` et `compiz.desktop` (ce dossier), copiés par `bureau-modeles` |
 | Config picom | `~/.config/picom/picom.conf` |
 | Style du Alt+Tab | `~/.config/gtk-3.0/gtk.css` |

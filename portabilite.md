@@ -45,9 +45,11 @@ on les met dans le paquet (licence MIT). Ensuite, prendre `papirus-icon-theme` e
 | | Chemin | Où | Problème |
 |---|---|---|---|
 | ✅ | `~/Pictures/Wallpapers`, `~/Videos` en dur | `bureau-reglages.py` | **Corrigé** : galerie dans `fonds/`, sélecteurs ouverts dans les dossiers XDG. Avant : sur un Debian en français, `xdg-user-dirs` crée `~/Images` et `~/Vidéos` : les dossiers proposés n'existent pas. Il faut lire `xdg-user-dir PICTURES` / `VIDEOS` (ou `GLib.get_user_special_dir`). |
-| 🟠 | `$HOME/.local/bin/fond-anime` et `$HOME/.local/bin/bureau-wm` écrits dans les `.desktop` créés | `fond-anime` (démarrage auto, nettoyage), `compiz.desktop` | Faux si le logiciel est installé dans `/usr/bin` par un paquet. Écrire le nom de la commande seul, ou le chemin réel du script. |
-| 🟠 | `xwinwrap` cherché dans `~/.local/bin` | `fond-anime` ligne 29 | xwinwrap n'est **pas dans Debian** : compilé à la main ici. |
-| 🟢 | `PATH` complété par `~/.local/bin` | `bureau-reglages.py` ligne 61 | Sans effet gênant, mais inutile une fois en paquet. |
+| ✅ | `$HOME/.local/bin/fond-anime` et `$HOME/.local/bin/bureau-wm` écrits dans les `.desktop` créés | `fond-anime` (démarrage auto, nettoyage), `compiz.desktop` | **Corrigé** : chemin complet trouvé à l'écriture (`chemin_commande`) : un lien vers le script dans le PATH ou `~/.local/bin`, `/usr/bin` pour un paquet, sinon le script lui-même. Le nom seul ne marcherait pas : le PATH de la session XFCE (LightDM) ne contient pas `~/.local/bin`. |
+| 🟢 | `xwinwrap` cherché aussi dans `~/.local/bin` | `fond-anime`, interface | Gardé exprès : simple endroit de recherche en plus du PATH (xwinwrap n'est **pas dans Debian**, compilé à la main ici). |
+| ✅ | `PATH` complété par `~/.local/bin` | `bureau-reglages.py` | **Corrigé** : l'interface met le `bin/` voisin en tête du PATH ; elle appelle ses propres scripts, installée ou non. `bureau-profil` appelle `bureau-wm` par son chemin (avant : par le PATH). |
+| ✅ | `~/.config`, `~/.cache`, `~/.local/share` en dur | tous les scripts, interface, `installer.sh` | **Corrigé** : `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME`, `$XDG_DATA_HOME` s'ils sont définis (xfconf, picom, GTK et l'autostart les suivent aussi). Thèmes et icônes cherchés comme GTK, dans `$XDG_DATA_DIRS` (`/usr/local/share` compris). |
+| ✅ | `fonds/` et `fonds-animes/` dans le dossier du logiciel | interface | **Corrigé** : si ce dossier n'est pas modifiable (installé dans `/usr` par un paquet), `~/.local/share/bureau-reglages/fonds` et `fonds-animes`. Avant, l'interface plantait au démarrage (`PermissionError`). |
 | 🟢 | `installer.sh` crée des liens vers le dossier du projet | `installer.sh` | Bien pour développer ; pour les autres il faut une vraie installation (`/usr/bin`, `/usr/share/bureau-reglages/`, `/usr/share/applications/`). |
 
 ## 4. Dépendances : paquets Debian 13
@@ -115,7 +117,11 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    Les images de fond sont rangées dans `fonds/` (galerie, ajout par copie, écran de
    connexion) et les sélecteurs de fichiers s'ouvrent dans le dossier Images / Vidéos XDG.
    Reste : des profils d'exemple. *(sections 1 et 3)*
-3. **Chemins** : dossiers XDG, plus de `~/.local/bin` écrit en dur. *(section 3)*
+3. ✅ **Chemins** *(fait le 6/11)* : plus de `~/.local/bin` supposé dans les entrées de
+   démarrage ni dans le PATH de l'interface ; dossiers XDG suivis partout ; images et vidéos
+   dans `~/.local/share/bureau-reglages/` quand le logiciel est en lecture seule (l'interface
+   ne plante plus). Reste pour le paquet : une vraie installation à la place des liens de
+   `installer.sh`. *(section 3)*
 4. **Écran de connexion** : téléchargement ou fourniture du thème, plus de copie depuis `~`.
    *(section 2)*
 5. **Paquet `.deb`** avec les dépendances, puis test dans une machine virtuelle Debian 13 +

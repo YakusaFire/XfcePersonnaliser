@@ -18,7 +18,9 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-SAUVEGARDE = os.path.expanduser("~/.config/fond-anime/fond-xfdesktop.json")
+# ~/.config, ou $XDG_CONFIG_HOME s'il est défini (comme fond-anime)
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+SAUVEGARDE = os.path.join(CONFIG, "fond-anime", "fond-xfdesktop.json")
 CLE_DEFAUT = [1 / 255, 2 / 255, 3 / 255, 1.0]
 DEFAUT = {"rgba1": None, "color-style": 0, "image-style": 5}  # fond masqué sans sauvegarde
 REGLAGES = ("rgba1", "color-style", "image-style")  # image-style en dernier : l'image ne

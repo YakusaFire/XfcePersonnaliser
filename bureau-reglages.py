@@ -31,7 +31,7 @@ except (ValueError, ImportError):
 
 HOME = os.path.expanduser("~")
 ICI = os.path.dirname(os.path.realpath(__file__))
-CONFIG = os.path.join(HOME, ".config")
+CONFIG = GLib.get_user_config_dir()  # ~/.config, ou $XDG_CONFIG_HOME s'il est défini
 PROFILS = os.path.join(CONFIG, "bureau-profils")
 ANNULER = "_avant-load"  # état sauvegardé par bureau-profil avant chaque load
 MODE_WM = os.path.join(CONFIG, "bureau-wm")
@@ -43,22 +43,37 @@ VIDEO_ANIMEE = os.path.join(CONFIG, "fond-anime", "video")
 PAUSE_AUTO = os.path.join(CONFIG, "fond-anime", "pause-auto")  # « off » : pas de pause automatique
 PRISE_MPV = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or os.path.join(CONFIG, "fond-anime"),
                          "fond-anime-mpv.sock")  # prise de commande du mpv du fond animé
-VIDEOS_FOND = os.path.join(ICI, "fonds-animes")  # vidéos proposées pour le fond animé
-FONDS = os.path.join(ICI, "fonds")  # images proposées pour le fond d'écran
+
+
+def dossier_donnees(nom):
+    """Dossier des images ou des vidéos proposées : celui du logiciel s'il est modifiable (copie
+    de git), sinon ~/.local/share/bureau-reglages/ (logiciel installé en lecture seule, dans /usr)."""
+    dans_logiciel = os.path.join(ICI, nom)
+    if os.access(dans_logiciel if os.path.isdir(dans_logiciel) else ICI, os.W_OK):
+        return dans_logiciel
+    return os.path.join(GLib.get_user_data_dir(), "bureau-reglages", nom)
+
+
+VIDEOS_FOND = dossier_donnees("fonds-animes")  # vidéos proposées pour le fond animé
+FONDS = dossier_donnees("fonds")  # images proposées pour le fond d'écran
 MODELES = os.path.join(ICI, "bin", "bureau-modeles")  # réglages de départ (config/), sans rien écraser
-CACHE = os.path.join(HOME, ".cache", "bureau-reglages")  # miniatures et infos des vidéos
+CACHE = os.path.join(GLib.get_user_cache_dir(), "bureau-reglages")  # miniatures et infos des vidéos
 GREETER_SCRIPT = os.path.join(ICI, "greeter-catppuccin.sh")
 GREETER_CONF = "/etc/lightdm/lightdm-gtk-greeter.conf"
 GREETER_THEME = "Catppuccin-Mocha-Greeter"
 MEMO = os.path.join(ICI, "commandes-bureau.md")
 
-DOSSIERS_THEMES = [os.path.join(HOME, ".themes"), os.path.join(HOME, ".local/share/themes"), "/usr/share/themes"]
-DOSSIERS_ICONES = [os.path.join(HOME, ".local/share/icons"), os.path.join(HOME, ".icons"), "/usr/share/icons"]
+# Mêmes dossiers que GTK : ~/.themes ou ~/.icons, puis themes/ et icons/ de ~/.local/share et
+# de chaque dossier de $XDG_DATA_DIRS (/usr/local/share, /usr/share…)
+DONNEES = [GLib.get_user_data_dir(), *GLib.get_system_data_dirs()]
+DOSSIERS_THEMES = list(dict.fromkeys([os.path.join(HOME, ".themes"), *(os.path.join(d, "themes") for d in DONNEES)]))
+DOSSIERS_ICONES = list(dict.fromkeys([os.path.join(HOME, ".icons"), *(os.path.join(d, "icons") for d in DONNEES)]))
 EXT_IMAGES = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".svg")
 EXT_VIDEOS = (".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".ogv", ".gif")
 
-# Lancée depuis le menu, l'interface n'a pas forcément ~/.local/bin dans son PATH
-os.environ["PATH"] = os.path.join(HOME, ".local/bin") + os.pathsep + os.environ.get("PATH", "")
+# Les commandes du projet (bureau-profil, fond-anime…) sont prises à côté de l'interface, où
+# qu'elle soit installée : le PATH de la session n'a pas forcément ~/.local/bin
+os.environ["PATH"] = os.path.join(ICI, "bin") + os.pathsep + os.environ.get("PATH", "")
 # L'aperçu (mpv) reçoit SIGTERM si l'interface s'arrête brutalement
 AVEC_PARENT = ["setpriv", "--pdeathsig", "TERM"] if shutil.which("setpriv") else []
 
@@ -71,8 +86,10 @@ PAQUETS = {
     "compiz": "compiz-core", "gtk-window-decorator": "compiz-gnome", "ccsm": "compizconfig-settings-manager",
     "pkexec": "pkexec", "lightdm-gtk-greeter": "lightdm-gtk-greeter", "dm-tool": "lightdm",
 }
-# lightdm-gtk-greeter est rangé dans /usr/sbin, souvent absent du PATH d'un utilisateur
-CHEMIN_PROGRAMMES = os.pathsep.join([os.environ["PATH"], "/usr/local/sbin", "/usr/sbin", "/sbin"])
+# lightdm-gtk-greeter est rangé dans /usr/sbin, souvent absent du PATH d'un utilisateur ;
+# xwinwrap, compilé à la main, est cherché aussi dans ~/.local/bin (comme le fait fond-anime)
+CHEMIN_PROGRAMMES = os.pathsep.join([os.environ["PATH"], os.path.join(HOME, ".local", "bin"),
+                                     "/usr/local/sbin", "/usr/sbin", "/sbin"])
 COMPIZ = ("compiz", "gtk-window-decorator")
 GREETER = ("pkexec", "lightdm-gtk-greeter")
 
@@ -143,6 +160,11 @@ def lire(chemin):
 def ecrire(chemin, texte):
     with open(chemin, "w", encoding="utf-8") as f:
         f.write(texte)
+
+
+def abrege(chemin):
+    """Chemin à afficher : ~ à la place du dossier personnel."""
+    return "~" + chemin[len(HOME):] if chemin == HOME or chemin.startswith(HOME + os.sep) else chemin
 
 
 def entier(valeur, defaut):
@@ -697,6 +719,17 @@ class Fenetre(Gtk.ApplicationWindow):
         barre.pack_start(contenu, True, True, 0)
         return barre
 
+    def surveiller(self, dossier):
+        """Crée le dossier et relit l'état quand on y ajoute ou retire des fichiers à la main
+        (Thunar, terminal…). Le moniteur renvoyé doit être gardé (None si c'est impossible)."""
+        try:
+            os.makedirs(dossier, exist_ok=True)
+            moniteur = Gio.File.new_for_path(dossier).monitor_directory(Gio.FileMonitorFlags.NONE, None)
+        except (OSError, GLib.Error):
+            return None
+        moniteur.connect("changed", lambda *_: self.plus_tard(dossier, 800, self.actualiser))
+        return moniteur
+
     def bandeau(self, texte):
         """Avertissement en haut de la fenêtre (session qui n'est pas XFCE sous X11…)."""
         boite = Gtk.Box(spacing=12, margin_start=12, margin_end=12, margin_top=10, margin_bottom=4)
@@ -939,7 +972,7 @@ class Fenetre(Gtk.ApplicationWindow):
     def page_fond(self):
         b = self.page("fond", "Fond d'écran",
                       "Clique sur une image pour la mettre en fond sur tous les écrans et espaces de travail. "
-                      f"Les images sont rangées dans {FONDS.replace(HOME, '~', 1)}.")
+                      f"Les images sont rangées dans {abrege(FONDS)}.")
         self.alerte_anime = Gtk.Box(spacing=12, no_show_all=True)
         self.alerte_anime.get_style_context().add_class("avertissement")
         contenu = Gtk.Box(spacing=12, margin_start=16, margin_end=12, margin_top=10, margin_bottom=10)
@@ -962,10 +995,7 @@ class Fenetre(Gtk.ApplicationWindow):
         actions.pack_end(bouton("Ouvrir le dossier", lambda: self.detacher("xdg-open", FONDS)), False, False, 0)
         self.carte(b, self.galerie, actions)
 
-        # La galerie suit les images ajoutées ou retirées à la main
-        os.makedirs(FONDS, exist_ok=True)
-        self.moniteur_fonds = Gio.File.new_for_path(FONDS).monitor_directory(Gio.FileMonitorFlags.NONE, None)
-        self.moniteur_fonds.connect("changed", lambda *_: self.plus_tard("fonds", 800, self.actualiser))
+        self.moniteur_fonds = self.surveiller(FONDS)
 
     def remplir_galerie(self, e):
         fichiers = fonds_disponibles()
@@ -1108,7 +1138,7 @@ class Fenetre(Gtk.ApplicationWindow):
         self.carte(b, contenu)
 
         self.section(b, "Vidéos disponibles",
-                     f"Rangées dans {VIDEOS_FOND.replace(HOME, '~', 1)}. Un clic pour l'aperçu, "
+                     f"Rangées dans {abrege(VIDEOS_FOND)}. Un clic pour l'aperçu, "
                      "un double-clic pour la mettre en fond d'écran.")
         self.galerie_videos = Gtk.FlowBox(homogeneous=True, min_children_per_line=2, max_children_per_line=4,
                                           row_spacing=6, column_spacing=6, activate_on_single_click=False,
@@ -1131,10 +1161,7 @@ class Fenetre(Gtk.ApplicationWindow):
         boutons.pack_end(bouton("Ouvrir le dossier", lambda: self.detacher("xdg-open", VIDEOS_FOND)), False, False, 0)
         self.carte(b, liste, boutons)
 
-        # La liste suit les vidéos ajoutées ou retirées à la main (Thunar, terminal…)
-        os.makedirs(VIDEOS_FOND, exist_ok=True)
-        self.moniteur_videos = Gio.File.new_for_path(VIDEOS_FOND).monitor_directory(Gio.FileMonitorFlags.NONE, None)
-        self.moniteur_videos.connect("changed", lambda *_: self.plus_tard("videos", 800, self.actualiser))
+        self.moniteur_videos = self.surveiller(VIDEOS_FOND)
 
     def maj_anime(self, e):
         self.switch_anime.set_active(e.fond_anime)
@@ -1379,8 +1406,7 @@ class Fenetre(Gtk.ApplicationWindow):
         self.ligne_ombres = ligne("Ombres des fenêtres", None, self.switch_ombres)
         self.ligne_fondu = ligne("Fondu des menus et bulles", None, self.switch_fondu)
         self.ligne_arrondi = ligne("Arrondi des coins", "En pixels, 0 pour des coins droits.", self.arrondi)
-        self.ligne_alttab = ligne("Alt+Tab stylisé", "Sélecteur de fenêtres aux couleurs du profil "
-                                                    "(~/.config/gtk-3.0/gtk.css).", self.switch_alttab)
+        self.ligne_alttab = ligne("Alt+Tab stylisé", "", self.switch_alttab)
         self.ligne_picom = ligne("Picom", "", self.switch_picom)
         self.carte_effets = self.carte(
             b, self.ligne_picom, self.ligne_animations, self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi, self.ligne_alttab)
@@ -1441,8 +1467,8 @@ class Fenetre(Gtk.ApplicationWindow):
             l.set_sensitive(e.picom_actif and bool(conf.texte))
         self.switch_alttab.set_active(e.alttab)
         self.ligne_alttab.desc.set_text(
-            "Sélecteur de fenêtres aux couleurs du profil (~/.config/gtk-3.0/gtk.css)." if e.alttab_dispo else
-            "Ton ~/.config/gtk-3.0/gtk.css a déjà son propre style : celui du projet n'y est pas mis.")
+            f"Sélecteur de fenêtres aux couleurs du profil ({abrege(ALTTAB_CSS)})." if e.alttab_dispo else
+            f"Ton {abrege(ALTTAB_CSS)} a déjà son propre style : celui du projet n'y est pas mis.")
         self.ligne_alttab.set_sensitive(e.alttab_dispo)
 
     def regler_picom(self, actif):

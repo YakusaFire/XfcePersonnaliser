@@ -6,7 +6,7 @@ set -euo pipefail
 
 ICI=$(cd "$(dirname "$0")" && pwd)
 BIN="$HOME/.local/bin"
-MENU="$HOME/.local/share/applications"
+MENU="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$BIN" "$MENU" "$ICI/fonds" "$ICI/fonds-animes"
 
 # Un vrai fichier déjà présent est gardé de côté plutôt qu'écrasé

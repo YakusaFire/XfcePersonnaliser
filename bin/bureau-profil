@@ -9,10 +9,11 @@ ICI="$(dirname "$(realpath "$0")")"
 # Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
 cd "$HOME"
 
-DIR="$HOME/.config/bureau-profils"
-XML="$HOME/.config/xfce4/xfconf/xfce-perchannel-xml"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
+DIR="$CONF/bureau-profils"
+XML="$CONF/xfce4/xfconf/xfce-perchannel-xml"
 CHANNELS=(xsettings xfwm4 xfce4-panel xfce4-desktop xfce4-terminal xfce4-notifyd)
-# Fichiers/dossiers hors xfconf, relatifs à ~/.config
+# Fichiers/dossiers hors xfconf, relatifs à ~/.config ($XDG_CONFIG_HOME s'il est défini)
 EXTRA=(xfce4/panel terminator/config gtk-3.0/settings.ini gtk-3.0/gtk.css gtk-4.0 picom)
 
 usage() { sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
@@ -38,9 +39,9 @@ save() {
             echo "Attention : le fond d'écran du profil n'a pas pu être corrigé"
     fi
     for e in "${EXTRA[@]}"; do
-        [ -e "$HOME/.config/$e" ] || continue
+        [ -e "$CONF/$e" ] || continue
         mkdir -p "$p/config/$(dirname "$e")"
-        cp -a "$HOME/.config/$e" "$p/config/$e"
+        cp -a "$CONF/$e" "$p/config/$e"
     done
     echo "Profil « $1 » enregistré dans $p"
 }
@@ -61,21 +62,21 @@ load() {
     done
     for e in "${EXTRA[@]}"; do
         [ -e "$p/config/$e" ] || continue
-        rm -rf "$HOME/.config/$e"
-        mkdir -p "$HOME/.config/$(dirname "$e")"
-        cp -a "$p/config/$e" "$HOME/.config/$e"
+        rm -rf "$CONF/$e"
+        mkdir -p "$CONF/$(dirname "$e")"
+        cp -a "$p/config/$e" "$CONF/$e"
     done
 
     # Relance des composants pour qu'ils relisent la config
     xfconf-query -c xsettings -p /Net/ThemeName >/dev/null  # redémarre xfconfd
     xfsettingsd --replace &>/dev/null & disown
-    if [ "$(bureau-wm)" = compiz ]; then
+    if [ "$("$ICI/bureau-wm")" = compiz ]; then
         # Compiz gère fenêtres et effets : on recale juste sa décoration
-        bureau-wm theme
+        "$ICI/bureau-wm" theme
     else
         # picom remplace le compositeur de xfwm4 : les deux ne peuvent pas tourner ensemble.
         # S'il a été désactivé (bureau-reglages), xfwm4 reprend son compositeur intégré.
-        if command -v picom >/dev/null && ! grep -qx 'Hidden=true' "$HOME/.config/autostart/picom.desktop" 2>/dev/null; then
+        if command -v picom >/dev/null && ! grep -qx 'Hidden=true' "$CONF/autostart/picom.desktop" 2>/dev/null; then
             xfconf-query -c xfwm4 -p /general/use_compositing -s false
             pkill -x picom || true; sleep 0.3
             picom &>/dev/null & disown

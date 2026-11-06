@@ -2,6 +2,7 @@
 # bureau-modeles : met en place les réglages de départ du projet (modèles de config/)
 # qui manquent encore. Un fichier déjà présent n'est jamais écrasé.
 #   bureau-modeles   installe ce qui manque et l'affiche (rien à dire : n'affiche rien)
+# (~/.config ci-dessous : $XDG_CONFIG_HOME s'il est défini)
 #
 # Lancé par installer.sh, par bureau-reglages à son ouverture et par fond-anime.
 #   ~/.config/picom/picom.conf             réglages de picom 12 (ombres, coins, animations, règles)
@@ -12,12 +13,24 @@
 set -u
 ICI="$(dirname "$(realpath "$0")")"
 MODELES="$ICI/../config"
-CONF="$HOME/.config"
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 case "${1:-}" in
     "") ;;
     *) sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
+
+# Commande à écrire dans une entrée de démarrage, en chemin complet (le PATH de la session n'a
+# pas forcément ~/.local/bin) : un lien vers ce script trouvé dans le PATH ou dans ~/.local/bin
+# (installer.sh), /usr/bin pour un paquet…, sinon le script lui-même
+chemin_commande() {
+    local d IFS=:
+    for d in $PATH "$HOME/.local/bin"; do
+        [ "$d" != "$ICI" ] && [ -x "$d/$1" ] && [ "$(realpath "$d/$1" 2>/dev/null)" = "$ICI/$1" ] &&
+            { echo "$d/$1"; return; }
+    done
+    echo "$ICI/$1"
+}
 
 # copier MODELE DESTINATION : seulement si la destination n'existe pas
 copier() {
@@ -41,8 +54,7 @@ if copier autostart/picom.desktop "$AUTO/picom.desktop"; then
     pgrep -x picom >/dev/null || echo "Hidden=true" >> "$AUTO/picom.desktop"
 fi
 if copier autostart/compiz.desktop "$AUTO/compiz.desktop"; then
-    # Chemin de bureau-wm : le lien de ~/.local/bin s'il existe, sinon le script lui-même
-    wm="$(command -v bureau-wm || echo "$ICI/bureau-wm")"
+    wm="$(chemin_commande bureau-wm)"
     wm="${wm//&/\\&}"  # « & » a un sens pour sed
     sed -i "s|@BUREAU_WM@|$wm|" "$AUTO/compiz.desktop"
     [ "$(cat "$CONF/bureau-wm" 2>/dev/null)" = compiz ] || echo "Hidden=true" >> "$AUTO/compiz.desktop"
