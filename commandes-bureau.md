@@ -27,8 +27,9 @@ Une fenêtre qui regroupe tout ce mémo. Menu **Paramètres → Personnalisation
 > **Programmes manquants** : une option dont le programme n'est pas installé (picom, mpv,
 > Compiz, ccsm, LightDM…) est grisée, avec la commande `sudo apt install …` à lancer ; la liste
 > est relue à chaque retour sur la fenêtre. Sans ffmpeg, pas de miniatures des vidéos.
-> Fond animé : il faut mpv, plus picom (vidéo sous le bureau) ou xwinwrap ; en mode Compiz,
-> xwinwrap seulement. Un bandeau prévient si la session n'est pas XFCE ou est sous Wayland.
+> Fond animé : il faut mpv. Avec picom en glx, la vidéo passe sous le bureau ; sinon (Compiz,
+> rendu logiciel, picom désactivé) elle se pose dessus, icônes en lecture seule, et l'onglet dit
+> pourquoi. Un bandeau prévient si la session n'est pas XFCE ou est sous Wayland.
 
 ---
 
@@ -113,7 +114,7 @@ Lit une vidéo en boucle, sans le son, à la place du fond d'écran.
 Aussi réglable depuis `bureau-reglages`, onglet **Fond animé** : un clic sur une vidéo
 la montre dans l'aperçu, un double-clic la met en fond d'écran.
 
-**Avec picom (mode xfwm4 + picom)**, la vidéo passe *sous* le vrai bureau : les icônes
+**Avec picom en glx (mode xfwm4 + picom)**, la vidéo passe *sous* le vrai bureau : les icônes
 sont celles d'XFCE et s'utilisent normalement (déplacer, supprimer, renommer, créer un
 lanceur ou un dossier, glisser depuis Thunar, menu du clic droit). Pour ça :
 
@@ -125,16 +126,22 @@ lanceur ou un dossier, glisser depuis Thunar, menu du clic droit). Pour ça :
    La règle ne s'applique que pendant le fond animé, quand la fenêtre du bureau porte la
    propriété `_FOND_ANIME` : un fond d'écran normal n'est jamais touché.
 
-**Pause automatique** (avec picom, activée par défaut) : chaque seconde, `fond-anime-video`
+**Pause automatique** (activée par défaut, dans les deux modes) : chaque seconde, `fond-anime-video`
 regarde si la vidéo se voit. Elle se met en pause quand une fenêtre est en plein écran ou
 agrandie sur l'espace de travail courant, quand l'écran est éteint ou quand la session est
 verrouillée, et repart dès que le bureau se revoit. mpv passe alors d'environ 6 % d'un cœur
 à 0,1 %, et la carte graphique ne décode plus la vidéo. Réglage : `fond-anime pause-auto on|off`,
 ou l'interrupteur de l'onglet « Fond animé ».
 
-**Sans picom (mode Compiz)**, la vidéo recouvre le bureau et `fond-anime-icones` réaffiche les
-icônes par-dessus : elles s'ouvrent au double-clic mais ne se déplacent pas, et il n'y a pas
-de pause automatique.
+**Sans picom en glx** (mode Compiz, picom en xrender faute d'accélération 3D, picom désactivé),
+la vidéo se pose *sur* le bureau : `fond-anime-video --type-bureau` ouvre une fenêtre de type
+« bureau » gérée par le gestionnaire de fenêtres (ce que faisait `xwinwrap -fdt`, qui n'est plus
+utilisé), au-dessus du fond de xfdesktop et sous les applications, sans focus ni clic, sur tous
+les espaces de travail, hors de la barre des tâches. Elle cache les icônes de xfdesktop :
+`fond-anime-icones` les réaffiche par-dessus ; elles s'ouvrent au double-clic mais ne se
+déplacent pas. La vidéo est gardée entre les deux (sous Compiz, xfdesktop relancé repasserait
+devant). La pause automatique marche aussi ; avec Compiz, une fenêtre agrandie laissée sur un
+autre espace de travail (extension « wall ») ne compte pas.
 
 | Commande | Effet |
 |---|---|
@@ -148,6 +155,7 @@ de pause automatique.
 | `fond-anime pause-auto off` | La vidéo tourne tout le temps, même cachée |
 | `fond-anime --help` | Affiche l'aide |
 | `pgrep -af "^mpv .*fond-anime-mpv"` | Vérifie s'il tourne (aucune ligne = arrêté) |
+| `pgrep -af "^python3 [^ ]*/fond-anime-vide[o] "` | Montre le mode : avec `--type-bureau`, vidéo posée sur le bureau (icônes en lecture seule) ; sans, vidéo sous le bureau |
 | `fond-anime-fond etat` | Dit si le fond de xfdesktop est masqué (`masqué`) ou normal |
 | `fond-anime-fond restaurer` | Remet le vrai fond d'écran si le bureau reste noir sans vidéo |
 
@@ -175,17 +183,18 @@ fond-anime auto off
 > (entrée `fond-anime-nettoyage.desktop`, créée et retirée toute seule).
 > La règle de picom et le shader sont ajoutés tout seuls à `~/.config/picom/` s'ils manquent
 > (par exemple après le chargement d'un ancien profil).
-> Dépendances : `mpv`, `xrandr` ; `picom` pour la vidéo sous le bureau, sinon `xwinwrap`
-> (`~/.local/bin/xwinwrap`, absent des dépôts Debian ; seul possible en mode Compiz) ;
-> `ffmpeg` / `ffprobe` pour la couleur de masquage, les miniatures et les durées de l'onglet.
-> S'il ne peut pas se lancer, `fond-anime` dit ce qui manque (picom absent, arrêté ou sans
-> bloc `rules`, xwinwrap absent) et remet le fond d'écran.
+> Dépendances : `mpv`, `xrandr` ; `picom` en glx pour la vidéo sous le bureau ; `ffmpeg` /
+> `ffprobe` pour la couleur de masquage, les miniatures et les durées de l'onglet. Plus besoin de
+> `xwinwrap` (absent des dépôts Debian) : `fond-anime-video --type-bureau` le remplace.
+> Quand la vidéo ne peut pas passer sous le bureau, `fond-anime` dit pourquoi (Compiz, picom
+> absent, en xrender, arrêté ou sans bloc `rules`) ; sans mpv ou sans la vidéo, il refuse.
 > **Sans accélération graphique** (machine virtuelle sans 3D, `rendu-logiciel` réussit) : picom
-> est réglé en xrender, qui n'a pas le shader du bureau transparent, donc pas de vidéo sous le
-> bureau ; l'interface le dit. mpv est lancé avec `--vo=gpu,gpu-next,x11 --gpu-sw=yes`, sinon il
-> se rabat sur `sdl`, qui ignore `--wid` et ouvre sa propre fenêtre ; l'aperçu de l'onglet
-> « Fond animé » se passe toujours du décodage matériel (`--hwdec=no`), et le fond animé aussi
-> en rendu logiciel : mpv s'y bloque en cherchant un décodeur Vulkan.
+> est réglé en xrender, qui n'a pas le shader du bureau transparent : la vidéo se pose sur le
+> bureau (icônes en lecture seule) ; l'interface le dit. mpv est lancé avec
+> `--vo=gpu,gpu-next,x11 --gpu-sw=yes`, sinon il se rabat sur `sdl`, qui ignore `--wid` et ouvre
+> sa propre fenêtre ; l'aperçu de l'onglet « Fond animé » se passe toujours du décodage matériel
+> (`--hwdec=no`), et le fond animé aussi en rendu logiciel : mpv s'y bloque en cherchant un
+> décodeur Vulkan.
 
 ---
 
@@ -304,7 +313,7 @@ sudo apt install mpv   # fond animé
 | Élément | Chemin |
 |---|---|
 | Scripts | `bin/bureau-profil`, `bin/bureau-wm`, `bin/relancer-picom`, `bin/bureau-modeles`, `bin/rendu-logiciel` (ce dossier), liens dans `~/.local/bin/` |
-| Fond animé (programmes) | `bin/fond-anime`, `bin/fond-anime-video`, `bin/fond-anime-fond`, `bin/fond-anime-icones` (ce dossier), liens dans `~/.local/bin/` ; `~/.local/bin/xwinwrap` |
+| Fond animé (programmes) | `bin/fond-anime`, `bin/fond-anime-video`, `bin/fond-anime-fond`, `bin/fond-anime-icones` (ce dossier), liens dans `~/.local/bin/` |
 | Fond animé (shader picom) | `config/picom/fond-anime.glsl` (ce dossier), copié dans `~/.config/picom/` |
 | Fond animé (vrai fond gardé de côté) | `~/.config/fond-anime/fond-xfdesktop.json` (pendant la vidéo) |
 | Sauvegarde d'avant le passage sous le bureau | `~/.config/fond-anime/sauvegarde-avant-vrai-bureau/` (`picom.conf`, fond de xfdesktop) |

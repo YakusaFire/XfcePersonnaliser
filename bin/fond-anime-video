@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
-# fond-anime-video : fenêtre de la vidéo du fond animé, tout en bas de l'écran, sous le
-# bureau xfdesktop dont picom rend le fond transparent (xwinwrap -ov, lui, se glisse
-# dans la fenêtre du bureau et cache les icônes).
-# Comme xwinwrap, elle lance le lecteur en remplaçant WID par l'identifiant de la fenêtre :
+# fond-anime-video : fenêtre de la vidéo du fond animé. Comme xwinwrap, elle lance le lecteur en
+# remplaçant WID par l'identifiant de la fenêtre, et se ferme quand le lecteur s'arrête :
 #   fond-anime-video LxH+X+Y -- mpv -wid WID … VIDEO
-# La fenêtre reste sous le bureau et se ferme quand le lecteur s'arrête.
-# Pause automatique (si mpv a --input-ipc-server=PRISE) : la vidéo s'arrête tant qu'elle ne se
-# voit pas — fenêtre en plein écran ou agrandie sur l'espace de travail courant, écran éteint,
-# session verrouillée — et reprend ensuite ; désactivée si ~/.config/fond-anime/pause-auto
+#   fond-anime-video --type-bureau LxH+X+Y -- mpv -wid WID … VIDEO
+# Sans option (picom en glx) : fenêtre hors du gestionnaire de fenêtres (override-redirect), gardée
+# tout en bas de l'écran, sous le bureau xfdesktop dont picom rend le fond transparent
+# (xwinwrap -ov, lui, se glisse dans la fenêtre du bureau et cache les icônes).
+# --type-bureau (Compiz, picom en xrender ou arrêté), comme xwinwrap -fdt : fenêtre de type
+# « bureau » gérée par le gestionnaire de fenêtres, au-dessus du fond de xfdesktop et sous les
+# applications, sans focus ni clic, sur tous les espaces de travail, hors de la barre des tâches
+# et du pager. Elle cache les icônes de xfdesktop : fond-anime-icones les réaffiche par-dessus, et
+# la vidéo est gardée entre les deux.
+# Pause automatique (si mpv a --input-ipc-server=PRISE), dans les deux cas : la vidéo s'arrête tant
+# qu'elle ne se voit pas — fenêtre en plein écran ou agrandie sur l'espace de travail courant, écran
+# éteint, session verrouillée — et reprend ensuite ; désactivée si ~/.config/fond-anime/pause-auto
 # contient « off » (fond-anime pause-auto off).
 
 import ctypes
@@ -49,6 +55,12 @@ class XClassHint(ctypes.Structure):
     _fields_ = [("res_name", c_char_p), ("res_class", c_char_p)]
 
 
+class XClientMessageEvent(ctypes.Structure):
+    _fields_ = [("type", c_int), ("serial", c_ulong), ("send_event", c_int), ("display", c_void_p),
+                ("window", c_ulong), ("message_type", c_ulong), ("format", c_int), ("data", c_long * 5),
+                ("reste", c_long * 12)]  # jusqu'à la taille d'un XEvent (24 long)
+
+
 x11.XCreateWindow.argtypes = [c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_uint, c_int, c_uint,
                               c_void_p, c_ulong, POINTER(XSetWindowAttributes)]
 x11.XCreateWindow.restype = c_ulong
@@ -56,20 +68,32 @@ x11.XSetClassHint.argtypes = [c_void_p, c_ulong, POINTER(XClassHint)]
 x11.XInternAtom.argtypes = [c_void_p, c_char_p, c_int]
 x11.XInternAtom.restype = c_ulong
 x11.XGetWindowProperty.argtypes = [c_void_p, c_ulong, c_ulong, c_long, c_long, c_int, c_ulong, POINTER(c_ulong),
-                                   POINTER(c_int), POINTER(c_ulong), POINTER(c_ulong), POINTER(POINTER(c_ulong))]
+                                   POINTER(c_int), POINTER(c_ulong), POINTER(c_ulong), POINTER(c_void_p)]
+x11.XChangeProperty.argtypes = [c_void_p, c_ulong, c_ulong, c_ulong, c_int, c_int, c_void_p, c_int]
+x11.XSendEvent.argtypes = [c_void_p, c_ulong, c_int, c_long, c_void_p]
+x11.XGetGeometry.argtypes = [c_void_p, c_ulong, POINTER(c_ulong), POINTER(c_int), POINTER(c_int),
+                             POINTER(c_uint), POINTER(c_uint), POINTER(c_uint), POINTER(c_uint)]
+x11.XTranslateCoordinates.argtypes = [c_void_p, c_ulong, c_ulong, c_int, c_int, POINTER(c_int), POINTER(c_int),
+                                      POINTER(c_ulong)]
 CW_BACK_PIXEL, CW_OVERRIDE_REDIRECT, INPUT_OUTPUT = 1 << 1, 1 << 9, 1
+XA_ATOM, XA_CARDINAL, XA_WM_HINTS, XA_WM_NORMAL_HINTS, XA_WM_SIZE_HINTS = 4, 6, 35, 40, 41
+CLIENT_MESSAGE, SUBSTRUCTURE_NOTIFY, SUBSTRUCTURE_REDIRECT = 33, 1 << 19, 1 << 20
 try:
     xext = ctypes.CDLL("libXext.so.6")
     xext.DPMSInfo.argtypes = [c_void_p, POINTER(c_ushort), POINTER(c_ubyte)]
+    xext.XShapeCombineRectangles.argtypes = [c_void_p, c_ulong, c_int, c_int, c_int, c_void_p, c_int, c_int,
+                                             c_int]
 except OSError:
     xext = None
 
 # ~/.config, ou $XDG_CONFIG_HOME s'il est défini (comme fond-anime)
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 REGLAGE_PAUSE = os.path.join(CONFIG, "fond-anime", "pause-auto")
-ATOMES = ("_NET_CURRENT_DESKTOP", "_NET_CLIENT_LIST", "_NET_WM_DESKTOP", "_NET_WM_STATE",
-          "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE_MAXIMIZED_VERT", "_NET_WM_STATE_MAXIMIZED_HORZ",
-          "_NET_WM_STATE_HIDDEN")
+ATOMES = ("_NET_CURRENT_DESKTOP", "_NET_CLIENT_LIST", "_NET_CLIENT_LIST_STACKING", "_NET_WM_DESKTOP",
+          "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE_MAXIMIZED_VERT",
+          "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_HIDDEN", "_NET_WM_STATE_BELOW", "_NET_WM_STATE_STICKY",
+          "_NET_WM_STATE_SKIP_TASKBAR", "_NET_WM_STATE_SKIP_PAGER", "_NET_WM_WINDOW_TYPE",
+          "_NET_WM_WINDOW_TYPE_DESKTOP", "_NET_RESTACK_WINDOW", "_MOTIF_WM_HINTS", "WM_CLASS")
 
 # Une fenêtre peut disparaître entre deux appels : on ignore l'erreur au lieu de quitter
 GESTIONNAIRE = ctypes.CFUNCTYPE(c_int, c_void_p, c_void_p)(lambda _d, _e: 0)
@@ -90,28 +114,53 @@ def tout_en_bas(dpy, racine, fenetre):
     return bas == fenetre
 
 
-def propriete(dpy, fenetre, atome):
-    """Valeurs d'une propriété X de format 32 ([] si elle n'existe pas)."""
-    type_, format_, n, reste = c_ulong(), c_int(), c_ulong(), c_ulong()
-    donnees = POINTER(c_ulong)()
+def propriete(dpy, fenetre, atome, texte=False):
+    """Valeurs d'une propriété X de format 32 ([] si elle n'existe pas), ou ses octets (format 8)."""
+    type_, format_, n, reste, donnees = c_ulong(), c_int(), c_ulong(), c_ulong(), c_void_p()
     if x11.XGetWindowProperty(dpy, fenetre, atome, 0, 4096, 0, 0, byref(type_), byref(format_),
-                              byref(n), byref(reste), byref(donnees)) != 0:
-        return []
-    valeurs = [donnees[i] & 0xFFFFFFFF for i in range(n.value)] if donnees and format_.value == 32 else []
-    if donnees:
-        x11.XFree(donnees)
+                              byref(n), byref(reste), byref(donnees)) != 0 or not donnees.value:
+        return b"" if texte else []
+    if texte:
+        valeurs = ctypes.string_at(donnees, n.value) if format_.value == 8 else b""
+    else:
+        tableau = ctypes.cast(donnees, POINTER(c_ulong))
+        valeurs = [tableau[i] & 0xFFFFFFFF for i in range(n.value)] if format_.value == 32 else []
+    x11.XFree(donnees)
     return valeurs
+
+
+def ecrire(dpy, fenetre, atome, type_, valeurs):
+    """Écrit une propriété X de format 32 (Xlib les veut en tableau de long)."""
+    x11.XChangeProperty(dpy, fenetre, atome, type_, 32, 0, (c_long * len(valeurs))(*valeurs), len(valeurs))
+
+
+def geometrie(dpy, racine, fenetre):
+    """(x, y, largeur, hauteur) d'une fenêtre, x et y comptés depuis le coin de l'écran."""
+    r, x, y, larg, haut, bord, prof, enfant = c_ulong(), c_int(), c_int(), c_uint(), c_uint(), c_uint(), \
+        c_uint(), c_ulong()
+    if not (x11.XGetGeometry(dpy, fenetre, byref(r), byref(x), byref(y), byref(larg), byref(haut), byref(bord),
+                             byref(prof))
+            and x11.XTranslateCoordinates(dpy, fenetre, racine, 0, 0, byref(x), byref(y), byref(enfant))):
+        return None
+    return x.value, y.value, larg.value, haut.value
 
 
 def bureau_cache(dpy, racine, atomes):
     """Une fenêtre non réduite, en plein écran ou agrandie, sur l'espace de travail courant."""
     courant = (propriete(dpy, racine, atomes["_NET_CURRENT_DESKTOP"]) or [0])[0]
     agrandie = {atomes["_NET_WM_STATE_MAXIMIZED_VERT"], atomes["_NET_WM_STATE_MAXIMIZED_HORZ"]}
+    ecran = None
     for client in propriete(dpy, racine, atomes["_NET_CLIENT_LIST"]):
         bureau = (propriete(dpy, client, atomes["_NET_WM_DESKTOP"]) or [courant])[0]
         etats = set(propriete(dpy, client, atomes["_NET_WM_STATE"]))
-        if (bureau in (courant, 0xFFFFFFFF) and atomes["_NET_WM_STATE_HIDDEN"] not in etats
+        if not (bureau in (courant, 0xFFFFFFFF) and atomes["_NET_WM_STATE_HIDDEN"] not in etats
                 and (atomes["_NET_WM_STATE_FULLSCREEN"] in etats or agrandie <= etats)):
+            continue
+        # Avec Compiz, les espaces de travail sont les parties d'un seul grand bureau (extension
+        # « wall ») : une fenêtre agrandie sur une autre partie est hors de l'écran
+        ecran = ecran or geometrie(dpy, racine, racine)
+        g = geometrie(dpy, racine, client)
+        if g and ecran and 0 <= g[0] + g[2] // 2 < ecran[2] and 0 <= g[1] + g[3] // 2 < ecran[3]:
             return True
     return False
 
@@ -161,35 +210,108 @@ def commande_mpv(prise, *commande):
         return None
 
 
+def preparer_type_bureau(dpy, fenetre, x, y, largeur, hauteur, a):
+    """--type-bureau : ce que fait xwinwrap -fdt -b -s -st -sp -nf -ni -un, avant l'affichage."""
+    ecrire(dpy, fenetre, a["_NET_WM_WINDOW_TYPE"], XA_ATOM, [a["_NET_WM_WINDOW_TYPE_DESKTOP"]])
+    # Sous les applications, sur tous les espaces de travail, hors de la barre des tâches et du pager
+    ecrire(dpy, fenetre, a["_NET_WM_STATE"], XA_ATOM, [a[f"_NET_WM_STATE_{etat}"] for etat in
+                                                       ("BELOW", "STICKY", "SKIP_TASKBAR", "SKIP_PAGER")])
+    ecrire(dpy, fenetre, a["_NET_WM_DESKTOP"], XA_CARDINAL, [0xFFFFFFFF])
+    ecrire(dpy, fenetre, a["_MOTIF_WM_HINTS"], a["_MOTIF_WM_HINTS"], [2, 0, 0, 0, 0])  # sans décoration
+    # Jamais le focus (WM_HINTS : InputHint | StateHint, pas de saisie, état normal)
+    ecrire(dpy, fenetre, XA_WM_HINTS, XA_WM_HINTS, [1 | 2, 0, 1, 0, 0, 0, 0, 0, 0])
+    # Position et taille imposées (USPosition | USSize | PPosition | PSize) : pas de placement automatique
+    ecrire(dpy, fenetre, XA_WM_NORMAL_HINTS, XA_WM_SIZE_HINTS, [15, x, y, largeur, hauteur] + [0] * 13)
+    # Zone de clic vide (ShapeInput, ShapeSet) : les clics passent à ce qui est dessous
+    if xext:
+        xext.XShapeCombineRectangles(dpy, fenetre, 2, 0, 0, None, 0, 0, 0)
+
+
+def placer_au_dessus(dpy, racine, fenetre, voisine, a):
+    """Place une fenêtre de type bureau juste au-dessus d'une autre, par _NET_RESTACK_WINDOW envoyé
+    comme par un pager : Compiz refuse XRaiseWindow à une fenêtre qui ne prend pas le focus.
+    xfwm4 ignore toute demande d'empilement d'une fenêtre de type bureau, mais n'en a pas besoin :
+    l'état « dessous » (BELOW) y met la vidéo et les icônes dans une couche au-dessus de xfdesktop,
+    et les icônes, affichées après la vidéo, restent au-dessus d'elle."""
+    message = XClientMessageEvent(type=CLIENT_MESSAGE, window=fenetre, message_type=a["_NET_RESTACK_WINDOW"],
+                                  format=32)
+    message.data[:] = [2, voisine, 0, 0, 0]  # source : pager ; Above
+    x11.XSendEvent(dpy, racine, 0, SUBSTRUCTURE_REDIRECT | SUBSTRUCTURE_NOTIFY, byref(message))
+
+
+def role(dpy, fenetre, a):
+    """« xfdesktop » ou « icônes » pour les fenêtres de type bureau qui encadrent la vidéo, sinon None."""
+    if a["_NET_WM_WINDOW_TYPE_DESKTOP"] not in propriete(dpy, fenetre, a["_NET_WM_WINDOW_TYPE"]):
+        return None
+    classe = propriete(dpy, fenetre, a["WM_CLASS"], texte=True).split(b"\0")
+    return {b"Xfdesktop": "xfdesktop", b"fond-anime-icones": "icônes"}.get(classe[1] if len(classe) > 1 else b"")
+
+
+def garder_entre(dpy, racine, fenetre, a, roles):
+    """--type-bureau : la vidéo reste au-dessus du bureau de xfdesktop (lancé ou relancé après elle,
+    il repasserait devant) et sous les icônes de fond-anime-icones."""
+    pile = propriete(dpy, racine, a["_NET_CLIENT_LIST_STACKING"])  # de bas en haut
+    if fenetre not in pile:
+        return  # pas encore prise en main par le gestionnaire de fenêtres
+    for f in set(roles) - set(pile):
+        del roles[f]
+    for f in pile:
+        if f not in roles:
+            roles[f] = role(dpy, f, a)
+    rang = pile.index(fenetre)
+    bureaux = [f for f in pile[rang + 1:] if roles[f] == "xfdesktop"]
+    icones = [f for f in pile if roles[f] == "icônes"]
+    if bureaux:
+        # Les icônes puis la vidéo, chacune juste au-dessus de xfdesktop : Compiz traite la seconde
+        # demande avant d'avoir appliqué la première, la vidéo ne peut donc pas servir de repère
+        for f in icones + [fenetre]:
+            placer_au_dessus(dpy, racine, f, bureaux[-1], a)
+    else:
+        icones = [f for f in icones if pile.index(f) < rang]
+        for f in icones:
+            placer_au_dessus(dpy, racine, f, fenetre, a)
+    if bureaux or icones:
+        x11.XFlush(dpy)
+
+
 def main():
     args = sys.argv[1:]
-    geometrie = re.fullmatch(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", args[0]) if args else None
-    if not geometrie or len(args) < 3 or args[1] != "--":
-        sys.exit("Usage : fond-anime-video LxH+X+Y -- LECTEUR … WID …")
-    largeur, hauteur, x, y = map(int, geometrie.groups())
+    type_bureau = bool(args) and args[0] == "--type-bureau"
+    if type_bureau:
+        args = args[1:]
+    geometrie_voulue = re.fullmatch(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", args[0]) if args else None
+    if not geometrie_voulue or len(args) < 3 or args[1] != "--":
+        sys.exit("Usage : fond-anime-video [--type-bureau] LxH+X+Y -- LECTEUR … WID …")
+    largeur, hauteur, x, y = map(int, geometrie_voulue.groups())
 
     dpy = x11.XOpenDisplay(None)
     if not dpy:
         sys.exit("fond-anime-video : pas d'affichage X")
     racine = x11.XDefaultRootWindow(dpy)
-    attributs = XSetWindowAttributes(background_pixel=0, override_redirect=1)
+    atomes = {nom: x11.XInternAtom(dpy, nom.encode(), 0) for nom in ATOMES}
+    attributs = XSetWindowAttributes(background_pixel=0, override_redirect=0 if type_bureau else 1)
     fenetre = x11.XCreateWindow(dpy, racine, x, y, largeur, hauteur, 0, 0, INPUT_OUTPUT, None,
                                 CW_BACK_PIXEL | CW_OVERRIDE_REDIRECT, byref(attributs))
     # Classe reprise par la règle picom du fond animé : ni ombre, ni arrondi, ni animation
     x11.XSetClassHint(dpy, fenetre, byref(XClassHint(b"fond-anime-video", b"fond-anime-mpv")))
     x11.XStoreName(dpy, fenetre, b"fond-anime")
-    x11.XLowerWindow(dpy, fenetre)  # abaissée avant d'apparaître : jamais au-dessus du bureau
+    if type_bureau:
+        preparer_type_bureau(dpy, fenetre, x, y, largeur, hauteur, atomes)
+    else:
+        x11.XLowerWindow(dpy, fenetre)  # abaissée avant d'apparaître : jamais au-dessus du bureau
     x11.XMapWindow(dpy, fenetre)
     x11.XFlush(dpy)
 
     commande = [hex(fenetre) if a == "WID" else a for a in args[2:]]
     prise = next((a.split("=", 1)[1] for a in commande if a.startswith("--input-ipc-server=")), None)
-    atomes = {nom: x11.XInternAtom(dpy, nom.encode(), 0) for nom in ATOMES}
     lecteur = subprocess.Popen(AVEC_PARENT + commande, stdin=subprocess.DEVNULL)
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: lecteur.terminate())
+    roles = {}  # rôle des fenêtres déjà vues, pour --type-bureau
     while lecteur.poll() is None:
-        if not tout_en_bas(dpy, racine, fenetre):
+        if type_bureau:
+            garder_entre(dpy, racine, fenetre, atomes, roles)
+        elif not tout_en_bas(dpy, racine, fenetre):
             x11.XLowerWindow(dpy, fenetre)
             x11.XFlush(dpy)
         if prise:

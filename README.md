@@ -13,13 +13,13 @@ et une interface graphique qui regroupe le tout.
 | `bin/bureau-wm` | Choix du gestionnaire de fenêtres : xfwm4 + picom ou Compiz |
 | `bin/relancer-picom` | Relance picom puis le panneau (sinon la zone de survol du dock part en haut à gauche) |
 | `bin/fond-anime` | Fond d'écran animé à partir d'une vidéo (mpv) |
-| `bin/fond-anime-video` | Fenêtre de la vidéo, gardée sous le bureau xfdesktop ; met la vidéo en pause quand elle ne se voit pas |
+| `bin/fond-anime-video` | Fenêtre de la vidéo : sous le bureau xfdesktop avec picom en glx, sinon fenêtre de type bureau posée dessus (à la place de xwinwrap) ; met la vidéo en pause quand elle ne se voit pas |
 | `bin/fond-anime-fond` | Masque le fond de xfdesktop (couleur rendue transparente par picom) et le remet |
 | `config/picom/fond-anime.glsl` | Shader picom qui laisse voir la vidéo derrière les icônes |
 | `config/` (autres fichiers) | Réglages de départ : `picom.conf`, style du Alt+Tab, démarrage de picom et de Compiz |
 | `bin/bureau-modeles` | Copie les réglages de départ qui manquent, sans jamais écraser un fichier |
 | `bin/rendu-logiciel` | Détecte un rendu OpenGL logiciel (machine virtuelle sans 3D) : picom passe alors en xrender |
-| `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand picom ne tourne pas |
+| `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand la vidéo ne peut pas passer sous le bureau (Compiz, rendu logiciel) |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
 | `installer.sh` | Installe les commandes dans `~/.local/bin` et l'entrée du menu |
 | `construire-deb.sh` | Fabrique le paquet Debian `xfce-personnaliser` dans `paquet/` |
@@ -59,7 +59,7 @@ reçoit ses réglages de départ au premier lancement de l'interface.
 - XFCE 4.20 (xfwm4, xfdesktop, xfce4-panel), LightDM avec lightdm-gtk-greeter
 - Python 3 avec PyGObject (GTK 3) et pycairo
 - picom 12 ou plus récent ; Compiz en option (effet Génie)
-- mpv, ffmpeg / ffprobe, xrandr, et `xwinwrap` dans `~/.local/bin` (non fourni)
+- mpv, ffmpeg / ffprobe, xrandr pour le fond animé (xwinwrap, absent de Debian, n'est plus utilisé)
 - Thèmes non fournis : Catppuccin GTK (Mocha, accent mauve), Papirus, curseurs Catppuccin, WhiteSur.
   L'écran de connexion s'en passe : sans eux, il prend une base Adwaita sombre, les icônes
   Adwaita, les curseurs par défaut et un fond uni (`papirus-icon-theme` et `fonts-inter`
@@ -67,9 +67,10 @@ reçoit ses réglages de départ au premier lancement de l'interface.
 
 L'interface grise ce dont le programme manque et donne la commande `sudo apt install …` ;
 elle prévient si la session n'est pas XFCE sous X11. Sans accélération graphique (machine
-virtuelle sans 3D), picom est réglé en xrender et le fond animé sous le bureau n'est pas
-disponible : il a besoin de glx. Ce qui reste à faire pour que le projet
-marche sur n'importe quel Debian est listé dans [portabilite.md](portabilite.md).
+virtuelle sans 3D), picom est réglé en xrender : la vidéo du fond animé ne peut plus passer sous
+le bureau (il faut glx), elle se pose dessus et ses icônes sont en lecture seule, comme avec
+Compiz. Ce qui reste à faire pour que le projet marche sur n'importe quel Debian est listé dans
+[portabilite.md](portabilite.md).
 
 ## Utilisation
 

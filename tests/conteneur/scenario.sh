@@ -29,6 +29,11 @@ en_essai bureau-wm compiz; echo "code $?"
 en_essai relancer-picom; echo "code $?"
 en_essai fond-anime /nexiste.mp4; echo "code $?"
 en_essai fond-anime auto on; grep '^Exec' $MAISON/.config/autostart/fond-anime.desktop; en_essai fond-anime auto off
+# Fenêtre de type bureau du fond animé, sans xwinwrap (Xvfb, sans gestionnaire de fenêtres)
+en_essai xvfb-run -a bash -c '
+  fond-anime-video --type-bureau 320x200+0+0 -- sleep 3 & sleep 1.5
+  xprop -name fond-anime WM_CLASS _NET_WM_WINDOW_TYPE _NET_WM_STATE _NET_WM_DESKTOP WM_HINTS
+  wait $!; echo "code fond-anime-video --type-bureau : $?"'
 
 etape "5. Sans panneau lancé : profil, gestionnaire de fenêtres, picom, bouton du panneau (Xvfb)"
 en_essai xvfb-run -a dbus-run-session -- bash -c '

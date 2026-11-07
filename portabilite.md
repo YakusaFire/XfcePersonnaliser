@@ -13,7 +13,7 @@ main sur cette machine, qu'aucun script ne crée.
 
 | | Fichier | Utilisé par | Ce qui se passe s'il manque |
 |---|---|---|---|
-| ✅ | `~/.config/picom/picom.conf` (picom 12, avec `rules = ( … )` et `animations = ( … )`) | `fond-anime` (`preparer_picom`), onglet Effets de l'interface (`ConfigPicom`) | Le fond animé ne passe jamais sous le bureau : il retombe sur xwinwrap (icônes en lecture seule). Les réglages d'ombres, coins arrondis et animations n'ont aucun effet. picom tourne avec ses réglages par défaut. |
+| ✅ | `~/.config/picom/picom.conf` (picom 12, avec `rules = ( … )` et `animations = ( … )`) | `fond-anime` (`preparer_picom`), onglet Effets de l'interface (`ConfigPicom`) | Le fond animé ne passe jamais sous le bureau : la vidéo se pose par-dessus, icônes en lecture seule. Les réglages d'ombres, coins arrondis et animations n'ont aucun effet. picom tourne avec ses réglages par défaut. |
 | ✅ | `~/.config/autostart/picom.desktop` (coupe le compositeur d'xfwm4, lance picom, relance le panneau 4 s après) | `bureau-wm`, `bureau-profil load`, `fond-anime` (`picom_pret`), interrupteur picom de l'interface (`autostart_regler`) | L'interrupteur picom ne fait rien (`autostart_regler` sort sans rien écrire). `picom_pret` répond « pas de picom ». picom ne démarre pas à l'ouverture de session. |
 | ✅ | `~/.config/autostart/compiz.desktop` | `bureau-wm compiz` | Compiz marche pour la session en cours mais ne revient pas à la session suivante. |
 | ✅ | `~/.config/gtk-3.0/gtk.css` (style du Alt+Tab, `xfwm-tabwin`) | Interrupteur Alt+Tab | L'interrupteur est grisé (`alttab_dispo` faux) : la fonction n'existe pas pour les autres. |
@@ -46,7 +46,7 @@ Le script refuse proprement si lightdm-gtk-greeter manque.
 |---|---|---|---|
 | ✅ | `~/Pictures/Wallpapers`, `~/Videos` en dur | `bureau-reglages.py` | **Corrigé** : galerie dans `fonds/`, sélecteurs ouverts dans les dossiers XDG. Avant : sur un Debian en français, `xdg-user-dirs` crée `~/Images` et `~/Vidéos` : les dossiers proposés n'existent pas. Il faut lire `xdg-user-dir PICTURES` / `VIDEOS` (ou `GLib.get_user_special_dir`). |
 | ✅ | `$HOME/.local/bin/fond-anime` et `$HOME/.local/bin/bureau-wm` écrits dans les `.desktop` créés | `fond-anime` (démarrage auto, nettoyage), `compiz.desktop` | **Corrigé** : chemin complet trouvé à l'écriture (`chemin_commande`) : un lien vers le script dans le PATH ou `~/.local/bin`, `/usr/bin` pour un paquet, sinon le script lui-même. Le nom seul ne marcherait pas : le PATH de la session XFCE (LightDM) ne contient pas `~/.local/bin`. |
-| 🟢 | `xwinwrap` cherché aussi dans `~/.local/bin` | `fond-anime`, interface | Gardé exprès : simple endroit de recherche en plus du PATH (xwinwrap n'est **pas dans Debian**, compilé à la main ici). |
+| ✅ | `xwinwrap` cherché aussi dans `~/.local/bin` | `fond-anime`, interface | **Corrigé** : xwinwrap (**pas dans Debian**, compilé à la main ici) n'est plus utilisé ; l'interface ne cherche plus aucun programme dans `~/.local/bin`. |
 | ✅ | `PATH` complété par `~/.local/bin` | `bureau-reglages.py` | **Corrigé** : l'interface met le `bin/` voisin en tête du PATH ; elle appelle ses propres scripts, installée ou non. `bureau-profil` appelle `bureau-wm` par son chemin (avant : par le PATH). |
 | ✅ | `~/.config`, `~/.cache`, `~/.local/share` en dur | tous les scripts, interface, `installer.sh` | **Corrigé** : `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME`, `$XDG_DATA_HOME` s'ils sont définis (xfconf, picom, GTK et l'autostart les suivent aussi). Thèmes et icônes cherchés comme GTK, dans `$XDG_DATA_DIRS` (`/usr/local/share` compris). |
 | ✅ | `fonds/` et `fonds-animes/` dans le dossier du logiciel | interface | **Corrigé** : si ce dossier n'est pas modifiable (installé dans `/usr` par un paquet), `~/.local/share/bureau-reglages/fonds` et `fonds-animes`. Avant, l'interface plantait au démarrage (`PermissionError`). |
@@ -66,16 +66,32 @@ Aucune n'est installée ni vérifiée par le projet aujourd'hui (seul `mpv` est 
 | Fond animé | `mpv` 0.40, `ffmpeg` / `ffprobe` 7.1 | `mpv`, `ffmpeg` | conseillé |
 | Compiz | `compiz` 0.8.18, `gtk-window-decorator` | `compiz-core`, `compiz-gnome` (+ `compiz-plugins` pour l'effet Génie) | facultatif |
 | Décoration Compiz | `gsettings set org.mate.Marco.general …` | `marco-common` (schéma) | facultatif, avec Compiz |
-| Fond animé en mode Compiz | `xwinwrap` | **absent de Debian** | facultatif |
+| Fond animé sans picom en glx (Compiz, rendu logiciel) | `fond-anime-video --type-bureau` (à la place de `xwinwrap`, absent de Debian) | rien de plus : `python3`, `libx11-6`, `libxext6` | — |
 | Écran de connexion | `pkexec`, LightDM + lightdm-gtk-greeter | `pkexec`, `lightdm`, `lightdm-gtk-greeter` | facultatif |
 | Icônes, police | Papirus, Inter | `papirus-icon-theme`, `fonts-inter` | conseillé |
 
 ✅ Dans le paquet (`construire-deb.sh`) : `Depends:` pour les « oui » (plus `python3-gi-cairo`
 et `python3-cairo`), `Recommends:` pour picom (>= 12), mpv, ffmpeg, xdg-utils, exo-utils,
 papirus-icon-theme et fonts-inter, `Suggests:` pour Compiz, LightDM et pkexec. Tous ces
-noms existent dans Debian 13 (vérifié avec `apt-cache`). Reste xwinwrap : soit le compiler
-dans le paquet (petit programme C, licence à vérifier), soit le remplacer en mode Compiz par
-la fenêtre de `fond-anime-video`.
+noms existent dans Debian 13 (vérifié avec `apt-cache`).
+
+✅ **xwinwrap remplacé** *(7/11)*, la dernière dépendance absente de Debian : quand la vidéo ne
+peut pas passer sous le bureau (Compiz, picom en xrender ou désactivé),
+`fond-anime-video --type-bureau` ouvre la fenêtre que faisait
+`xwinwrap -fdt -b -s -st -sp -nf -ni -un` : type « bureau », état « dessous », sur tous les
+espaces de travail, hors de la barre des tâches et du pager, sans focus, zone de clic vide, sans
+décoration. Elle reste au-dessus de xfdesktop et sous `fond-anime-icones`, et la pause
+automatique y marche (elle n'existait pas avec xwinwrap). Testé dans la machine virtuelle, en
+mode Compiz et en rendu logiciel (xfwm4 avec picom en xrender, ou avec son compositeur
+intégré) : lancement, pause (agrandi, réduit, plein écran, autre espace de travail), relance de
+xfdesktop, de xfwm4 et de Compiz, `stop`, `actualiser`, ouverture de session avec `auto on`,
+textes et interrupteur de l'interface. Ce que ces essais ont appris :
+- xfwm4 ignore toute demande d'empilement d'une fenêtre de type bureau, mais l'état « dessous »
+  la range dans une couche au-dessus de celle de xfdesktop ;
+- Compiz refuse `XRaiseWindow` à une fenêtre qui ne prend pas le focus ; il suit
+  `_NET_RESTACK_WINDOW`, qui remet la vidéo au-dessus de xfdesktop quand celui-ci est relancé ;
+- Compiz a par défaut quatre espaces de travail côte à côte (extension « wall ») : une fenêtre
+  agrandie sur un autre espace est hors de l'écran et ne met plus la vidéo en pause.
 
 ## 5. Versions : pourquoi Debian 13 au minimum
 
@@ -162,4 +178,5 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    **Reste** : un essai avec accélération 3D (dans cette VM, la 3D de VirtualBox ralentissait
    tout et bloquait les instantanés), passer `lintian` (absent ici), et choisir une licence (le
    dépôt n'en a pas : le fichier `copyright` du paquet le dit).
-6. Facultatif : xwinwrap, Debian 12, traduction.
+6. Facultatif : ✅ xwinwrap *(remplacé le 7/11 par `fond-anime-video --type-bureau`, voir la
+   section 4)*, Debian 12, traduction.
