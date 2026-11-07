@@ -47,13 +47,29 @@ ln -s "../share/$NOM/bureau-reglages.py" "$RACINE/usr/bin/bureau-reglages"
 # Entrée du menu (même modèle qu'installer.sh), documentation
 sed "s|@EXEC@|bureau-reglages|" config/bureau-reglages.desktop > "$RACINE/usr/share/applications/bureau-reglages.desktop"
 install -m 644 README.md portabilite.md "$RACINE/usr/share/doc/$NOM/"
+# Licence au format lisible par les outils de Debian (DEP-5). Le texte de la GPL n'est pas mis
+# dans le paquet : Debian le fournit dans /usr/share/common-licenses. Avis d'usage de la FSF,
+# en anglais : seule la version anglaise de la GPL fait foi.
 cat > "$RACINE/usr/share/doc/$NOM/copyright" <<EOF
-XfcePersonnaliser — personnalisation du bureau XFCE
-Source : https://github.com/YakusaFire/XfcePersonnaliser
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: XfcePersonnaliser
+Source: https://github.com/YakusaFire/XfcePersonnaliser
 
-Copyright $(git log -1 --format=%cd --date=format:%Y) ${DEBFULLNAME:-$(git config user.name)}
-
-Aucune licence n'est encore choisie pour ce projet : tous droits réservés à son auteur.
+Files: *
+Copyright: $(git log -1 --format=%cd --date=format:%Y) ${DEBFULLNAME:-$(git config user.name)}
+License: GPL-3+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in "/usr/share/common-licenses/GPL-3".
 EOF
 chmod 644 "$RACINE/usr/share/applications/bureau-reglages.desktop" "$RACINE/usr/share/doc/$NOM/copyright"
 

@@ -276,6 +276,10 @@ Les commandes se lancent depuis le dossier du projet.
 | `tests/tester-paquet.sh` | Construit le paquet et le teste dans un Debian 13 neuf (conteneur Docker, sans réseau après la 1re fois) |
 | `tests/tester-paquet.sh --refaire` | Même chose en préparant de nouveau l'image d'essai |
 
+> Licence : GPL-3.0-or-later, texte complet dans `LICENSE`. Le paquet la déclare dans
+> `/usr/share/doc/xfce-personnaliser/copyright` (format de Debian, `GPL-3+`), qui renvoie au
+> texte fourni par Debian (`/usr/share/common-licenses/GPL-3`) au lieu d'en mettre une copie.
+
 > Test du paquet : la première fois, `tests/tester-paquet.sh` télécharge l'image `debian:trixie`
 > (~50 Mo) et les dépendances (~110 Mo), puis garde l'image `xfce-personnaliser-essai:base`
 > (~880 Mo) et le volume `xfce-personnaliser-apt` (~105 Mo). Tout supprimer :

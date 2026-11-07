@@ -76,3 +76,10 @@ Compiz. Ce qui reste à faire pour que le projet marche sur n'importe quel Debia
 
 Menu **Paramètres → Personnalisation du bureau**, ou la commande `bureau-reglages`.
 Toutes les commandes sont décrites dans [commandes-bureau.md](commandes-bureau.md).
+
+## Licence
+
+XfcePersonnaliser est un logiciel libre, sous licence GNU GPL version 3 ou ultérieure
+(GPL-3.0-or-later). Chacun peut l'utiliser, l'étudier, le modifier et le redistribuer ; une
+version redistribuée, modifiée ou non, doit rester sous la même licence et être fournie avec son
+code source. Texte complet : [LICENSE](LICENSE).

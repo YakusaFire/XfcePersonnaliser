@@ -175,8 +175,11 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    - mpv se bloquait en cherchant un décodeur Vulkan (lavapipe) : pas de décodage matériel pour
      l'aperçu, ni pour le fond animé en rendu logiciel.
 
+   ✅ **Licence** *(7/11)* : GPL-3.0-or-later. Texte dans `LICENSE` ; le fichier `copyright` du
+   paquet la déclare au format de Debian (DEP-5, `GPL-3+`) et renvoie à
+   `/usr/share/common-licenses/GPL-3`.
+
    **Reste** : un essai avec accélération 3D (dans cette VM, la 3D de VirtualBox ralentissait
-   tout et bloquait les instantanés), passer `lintian` (absent ici), et choisir une licence (le
-   dépôt n'en a pas : le fichier `copyright` du paquet le dit).
+   tout et bloquait les instantanés) et passer `lintian` (absent ici).
 6. Facultatif : ✅ xwinwrap *(remplacé le 7/11 par `fond-anime-video --type-bureau`, voir la
    section 4)*, Debian 12, traduction.
