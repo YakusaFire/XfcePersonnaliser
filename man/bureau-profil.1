@@ -1,0 +1,97 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de bureau-profil (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH BUREAU-PROFIL 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+bureau-profil \- enregistre et recharge des profils d'apparence du bureau Xfce
+.SH SYNOPSIS
+.B bureau-profil save
+.I nom
+.br
+.B bureau-profil load
+.I nom
+.br
+.B bureau-profil list
+.SH DESCRIPTION
+Un profil garde l'apparence complète du bureau : les canaux xfconf
+.BR xsettings ,
+.BR xfwm4 ,
+.BR xfce4-panel ,
+.BR xfce4-desktop ,
+.B xfce4-terminal
+et
+.BR xfce4-notifyd ,
+et ces fichiers de
+.IR ~/.config " :"
+.I xfce4/panel
+(lanceurs du panneau),
+.IR terminator/config ,
+.IR gtk-3.0/settings.ini ,
+.IR gtk-3.0/gtk.css ,
+.I gtk-4.0
+et
+.IR picom .
+.SH COMMANDES
+.TP
+.BI save " nom"
+Enregistre l'apparence actuelle sous ce nom ; un profil du même nom est remplacé. Pendant le
+fond animé, le profil garde le vrai fond d'écran, pas la couleur qui le masque.
+.TP
+.BI load " nom"
+Remet un profil. L'état actuel est d'abord enregistré dans le profil
+.BR _avant-load " :"
+.B bureau-profil load _avant-load
+annule le dernier chargement. Les programmes concernés sont ensuite relancés : paramètres
+d'Xfce, xfwm4 et picom (en mode Compiz, seule sa décoration est recalée), panneau, bureau,
+fond animé.
+.TP
+.B list
+Liste les profils enregistrés.
+.SH "PROFILS « APPARENCE SEULEMENT »"
+Un profil peut contenir, à la place des canaux entiers, un fichier
+.IR reglages.conf .
+Chaque ligne
+.RI « canal " propriété type valeur" »
+est réglée par
+.BR xfconf-query (1),
+et une ligne
+.RI « fond " chemin" »
+met l'image du bureau sur tous les écrans et espaces de travail. Le reste du bureau n'est pas
+touché, et rien n'est relancé. Un thème ou une image absents sont sautés, et le message dit
+combien. Les profils d'exemple
+.B sombre
+et
+.B clair
+sont de ce type.
+.SH FICHIERS
+.TP
+.I ~/.config/bureau-profils/
+Un dossier par profil :
+.I xfconf/
+(canaux enregistrés ;
+.IR canal .absent
+pour un canal jamais modifié, remis par défaut au chargement) et
+.I config/
+(fichiers), ou
+.I reglages.conf
+pour un profil « apparence seulement ».
+.SH ENVIRONNEMENT
+.TP
+.B XDG_CONFIG_HOME
+Remplace
+.I ~/.config
+s'il est défini.
+.SH "CODE DE RETOUR"
+0 si la commande a réussi. 1 si le profil est introuvable ou si la commande est incomplète ;
+un autre code si une étape échoue.
+.SH EXEMPLES
+.nf
+bureau-profil save mon-theme
+bureau-profil load sombre
+bureau-profil load _avant-load
+.fi
+.SH "VOIR AUSSI"
+.BR bureau-reglages (1),
+.BR bureau-wm (1),
+.BR fond-anime (1),
+.BR xfconf-query (1)

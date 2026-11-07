@@ -1,0 +1,90 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de bureau-reglages (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH BUREAU-REGLAGES 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+bureau-reglages \- interface graphique de personnalisation du bureau Xfce
+.SH SYNOPSIS
+.B bureau-reglages
+.SH DESCRIPTION
+.B bureau-reglages
+ouvre la fenêtre « Personnalisation du bureau », présente aussi dans le menu
+.BR "Paramètres → Personnalisation du bureau" .
+Elle regroupe les réglages du projet XfcePersonnaliser et s'appuie sur ses commandes :
+.BR bureau-profil (1),
+.BR bureau-wm (1),
+.BR fond-anime (1)
+et
+.BR relancer-picom (1).
+.PP
+Une seule fenêtre est ouverte à la fois : lancer la commande une seconde fois ramène la
+fenêtre déjà ouverte.
+.PP
+Ce qui manque au système (picom, mpv, Compiz, LightDM…) est grisé, avec la commande
+.B apt
+qui l'installe. Un bandeau prévient si la session n'est pas Xfce sous X11.
+.SH PAGES
+.TP
+.B Profils
+Enregistrer l'apparence actuelle dans un profil, en charger un, annuler le dernier
+chargement. Au premier lancement, deux profils d'exemple sont proposés,
+.B sombre
+et
+.BR clair .
+.TP
+.B Apparence
+Thème des applications, barre de titre des fenêtres, icônes, curseur, polices.
+.TP
+.B "Fond d'écran"
+Galerie d'images pour le fond du bureau.
+.TP
+.B "Fond animé"
+Vidéo en fond d'écran, lancement à l'ouverture de session, pause automatique.
+.TP
+.B "Fenêtres et effets"
+xfwm4 avec picom, ou Compiz ; effets de picom (animations, ombres, fondu des menus et des
+bulles, coins arrondis) ; Alt+Tab stylisé.
+.TP
+.B "Écran de connexion"
+Style de l'écran de connexion LightDM, avec aperçu ; l'appliquer demande les droits
+d'administrateur.
+.TP
+.B Outils
+Relancer les panneaux ou le gestionnaire de fenêtres, ouvrir le mémo des commandes et les
+paramètres d'apparence d'Xfce.
+.SH FICHIERS
+.TP
+.I ~/.config/bureau-profils/
+Profils d'apparence (voir
+.BR bureau-profil (1)).
+.TP
+.I ~/.config/picom/picom.conf
+Configuration de picom, réglée par la page « Fenêtres et effets ».
+.TP
+.I ~/.config/autostart/
+Démarrage de picom, de Compiz et du fond animé à l'ouverture de session.
+.TP
+.I ~/.local/share/bureau-reglages/
+Images et vidéos ajoutées, quand le logiciel est installé en lecture seule (paquet Debian).
+.TP
+.I ~/.cache/bureau-reglages/
+Miniatures et informations des vidéos.
+.PP
+Au premier lancement, les réglages de départ qui manquent (configuration de picom, démarrage
+de picom et de Compiz, style du Alt+Tab, profils d'exemple) sont copiés, sans jamais écraser
+un fichier.
+.SH ENVIRONNEMENT
+.TP
+.BR XDG_CONFIG_HOME ", " XDG_DATA_HOME ", " XDG_CACHE_HOME
+Remplacent
+.IR ~/.config ,
+.I ~/.local/share
+et
+.I ~/.cache
+s'ils sont définis.
+.SH "VOIR AUSSI"
+.BR bureau-profil (1),
+.BR bureau-wm (1),
+.BR fond-anime (1),
+.BR relancer-picom (1),
+.BR xfconf-query (1)

@@ -1,0 +1,57 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de bureau-wm (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH BUREAU-WM 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+bureau-wm \- choisit le gestionnaire de fenêtres du bureau Xfce : xfwm4 avec picom, ou Compiz
+.SH SYNOPSIS
+.B bureau-wm
+.RB [ xfwm4 | compiz | theme ]
+.SH DESCRIPTION
+Sans argument,
+.B bureau-wm
+affiche le mode actuel :
+.B xfwm4
+ou
+.BR compiz .
+.TP
+.B xfwm4
+Gestionnaire de fenêtres d'Xfce, avec
+.BR picom (1)
+pour les effets (ombres, coins arrondis, animations) ; le compositeur intégré d'xfwm4 est
+coupé. Sans picom installé, xfwm4 garde son compositeur intégré. Le choix vaut aussi pour les
+sessions suivantes.
+.TP
+.B compiz
+.BR compiz (1)
+et sa décoration gtk-window-decorator (effet Génie à la réduction des fenêtres), aussi aux
+sessions suivantes ; picom est arrêté.
+.TP
+.B theme
+Recale la décoration de Compiz sur le thème actuel : thème metacity du thème GTK, boutons et
+police des titres d'xfwm4. Demande le paquet marco-common.
+.PP
+Après un changement de mode, le panneau est relancé et le fond animé replacé : sous le bureau
+avec picom, par-dessus avec Compiz (icônes en lecture seule).
+.SH FICHIERS
+.TP
+.I ~/.config/bureau-wm
+Mode choisi.
+.TP
+.IR ~/.config/autostart/picom.desktop ", " ~/.config/autostart/compiz.desktop
+Démarrage à l'ouverture de session, activé ou désactivé selon le mode.
+.SH ENVIRONNEMENT
+.TP
+.B XDG_CONFIG_HOME
+Remplace
+.I ~/.config
+s'il est défini.
+.SH "CODE DE RETOUR"
+0 si la commande a réussi ; 1 si Compiz n'est pas installé, ou pour un argument inconnu.
+.SH "VOIR AUSSI"
+.BR bureau-reglages (1),
+.BR relancer-picom (1),
+.BR fond-anime (1),
+.BR picom (1),
+.BR compiz (1),
+.BR xfwm4 (1)

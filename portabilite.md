@@ -182,8 +182,11 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    ✅ **lintian** *(7/11, version 2.122)* : plus aucune erreur. Corrigé : champs `Depends`,
    `Recommends` et `Suggests` sur une seule ligne (obligatoire dans un paquet binaire), journal
    des versions `changelog.gz`, sommes `md5sums`, « Xfce » dans la description. Exception déclarée
-   pour le mémo, gardé hors de `/usr/share/doc` parce que l'interface l'ouvre. Restent dix
-   avertissements `no-manual-page` : aucune commande n'a de page de manuel.
+   pour le mémo, gardé hors de `/usr/share/doc` parce que l'interface l'ouvre. ✅ Pages de manuel
+   en français pour les cinq commandes principales *(7/11)*, avec une exception déclarée pour le
+   correcteur d'orthographe de lintian, qui est anglais. Restent cinq avertissements
+   `no-manual-page`, pour les commandes internes : `bureau-modeles`, `fond-anime-fond`,
+   `fond-anime-icones`, `fond-anime-video`, `rendu-logiciel`.
 
    **Reste** : un essai avec accélération 3D (dans cette VM, la 3D de VirtualBox ralentissait
    tout et bloquait les instantanés).

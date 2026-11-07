@@ -1,0 +1,106 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de fond-anime (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH FOND-ANIME 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+fond-anime \- fond d'écran animé à partir d'une vidéo, pour le bureau Xfce
+.SH SYNOPSIS
+.B fond-anime
+.RI [ vidéo ]
+.br
+.B fond-anime
+.RB { stop | actualiser }
+.br
+.B fond-anime auto
+.RB { on | off }
+.br
+.B fond-anime pause\-auto
+.RB { on | off }
+.SH DESCRIPTION
+.B fond-anime
+lance une vidéo en fond d'écran avec
+.BR mpv (1),
+en boucle et sans le son, et la mémorise. Sans argument, il relance la dernière vidéo
+mémorisée.
+.PP
+Avec
+.BR picom (1)
+en glx, la vidéo passe sous le vrai bureau, dont les icônes restent celles d'Xfce : on peut
+les déplacer, les supprimer, en créer. Pour cela, le fond de xfdesktop devient une couleur
+unie, la couleur moyenne de la vidéo, que picom rend transparente ; le vrai fond est gardé,
+puis remis à l'arrêt.
+.PP
+Sinon (Compiz, picom en xrender faute d'accélération 3D, picom arrêté), la vidéo se pose sur
+le bureau dans une fenêtre de type bureau, et les icônes sont réaffichées par-dessus, sans
+pouvoir être déplacées.
+.SH COMMANDES
+.TP
+.I vidéo
+Lance cette vidéo et la mémorise.
+.TP
+.B stop
+Arrête le fond animé et remet le fond d'écran.
+.TP
+.B actualiser
+Replace le fond animé s'il tourne, par exemple après un changement de profil ou de
+gestionnaire de fenêtres ; sinon, remet le fond d'écran.
+.TP
+.BR "auto on" | off
+Active ou désactive le lancement à l'ouverture de session.
+.TP
+.BR "pause\-auto on" | off
+Met la vidéo en pause tant qu'elle ne se voit pas : fenêtre en plein écran ou agrandie, écran
+éteint, session verrouillée ou passage sur une autre console. Activé par défaut.
+.TP
+.BR \-h ", " \-\-help
+Affiche l'aide.
+.SH FICHIERS
+.TP
+.I ~/.config/fond-anime/video
+Dernière vidéo lancée.
+.TP
+.I ~/.config/fond-anime/pause-auto
+.B off
+pour couper la pause automatique ; relu chaque seconde.
+.TP
+.I ~/.config/fond-anime/fond-xfdesktop.json
+Vrai fond d'écran, gardé pendant que la vidéo tourne sous le bureau.
+.TP
+.I ~/.config/picom/picom.conf
+Reçoit la règle du fond animé ; le shader
+.I fond-anime.glsl
+est copié à côté.
+.TP
+.I ~/.config/autostart/fond-anime.desktop
+Lancement à l'ouverture de session
+.RB ( "auto on" ).
+.TP
+.I ~/.config/autostart/fond-anime-nettoyage.desktop
+Créé pendant la vidéo : remet le vrai fond à la session suivante, si la vidéo n'a pas été
+arrêtée par
+.BR "fond-anime stop" .
+.TP
+.I $XDG_RUNTIME_DIR/fond-anime-mpv.sock
+Prise de commande de mpv, utilisée par la pause automatique.
+.SH ENVIRONNEMENT
+.TP
+.B XDG_CONFIG_HOME
+Remplace
+.I ~/.config
+s'il est défini.
+.SH "CODE DE RETOUR"
+0 si la commande a réussi ; 1 si la vidéo est introuvable ou si le fond animé ne peut pas
+démarrer (mpv absent…).
+.SH EXEMPLES
+.nf
+fond-anime ~/Vidéos/plage.mp4
+fond-anime auto on
+fond-anime pause-auto off
+fond-anime stop
+.fi
+.SH "VOIR AUSSI"
+.BR bureau-reglages (1),
+.BR bureau-wm (1),
+.BR mpv (1),
+.BR picom (1),
+.BR xfdesktop (1)

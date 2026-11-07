@@ -2,6 +2,10 @@
 
 Mémo des commandes créées pour styliser le bureau (Debian 13 + XFCE).
 
+Les commandes principales ont aussi leur page de manuel, en français : `man bureau-reglages`,
+`man bureau-profil`, `man bureau-wm`, `man fond-anime`, `man relancer-picom`. Les pages sont dans
+`man/`, liées dans `~/.local/share/man/man1` par `installer.sh` ou installées par le paquet.
+
 ---
 
 ## `bureau-reglages` — interface graphique

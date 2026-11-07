@@ -47,6 +47,14 @@ ln -s "../share/$NOM/bureau-reglages.py" "$RACINE/usr/bin/bureau-reglages"
 # Entrée du menu (même modèle qu'installer.sh), documentation
 sed "s|@EXEC@|bureau-reglages|" config/bureau-reglages.desktop > "$RACINE/usr/share/applications/bureau-reglages.desktop"
 install -m 644 README.md portabilite.md "$RACINE/usr/share/doc/$NOM/"
+
+# Pages de manuel des commandes principales, en français comme le logiciel, dans le dossier par
+# défaut (man1) : sans traduction, « man fond-anime » doit les trouver quelle que soit la langue
+mkdir -p "$RACINE/usr/share/man/man1"
+for p in man/*.1; do
+    gzip -9n < "$p" > "$RACINE/usr/share/man/man1/$(basename "$p").gz"
+    chmod 644 "$RACINE/usr/share/man/man1/$(basename "$p").gz"
+done
 # Licence au format lisible par les outils de Debian (DEP-5). Le texte de la GPL n'est pas mis
 # dans le paquet : Debian le fournit dans /usr/share/common-licenses. Avis d'usage de la FSF,
 # en anglais : seule la version anglaise de la GPL fait foi.
@@ -90,6 +98,8 @@ mkdir -p "$RACINE/usr/share/lintian/overrides"
 cat > "$RACINE/usr/share/lintian/overrides/$NOM" <<EOF
 # Ouvert par l'interface « Personnalisation du bureau » (MEMO dans bureau-reglages.py)
 $NOM: package-contains-documentation-outside-usr-share-doc [usr/share/$NOM/commandes-bureau.md]
+# Pages de manuel en français : le correcteur d'orthographe de lintian est anglais
+$NOM: typo-in-manual-page * [usr/share/man/man1/*]
 EOF
 chmod 644 "$RACINE/usr/share/applications/bureau-reglages.desktop" "$RACINE/usr/share/doc/$NOM/copyright" \
     "$RACINE/usr/share/doc/$NOM/changelog.gz" "$RACINE/usr/share/lintian/overrides/$NOM"
