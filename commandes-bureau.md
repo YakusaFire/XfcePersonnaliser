@@ -160,6 +160,12 @@ fond-anime auto off
 > `ffmpeg` / `ffprobe` pour la couleur de masquage, les miniatures et les durées de l'onglet.
 > S'il ne peut pas se lancer, `fond-anime` dit ce qui manque (picom absent, arrêté ou sans
 > bloc `rules`, xwinwrap absent) et remet le fond d'écran.
+> **Sans accélération graphique** (machine virtuelle sans 3D, `rendu-logiciel` réussit) : picom
+> est réglé en xrender, qui n'a pas le shader du bureau transparent, donc pas de vidéo sous le
+> bureau ; l'interface le dit. mpv est lancé avec `--vo=gpu,gpu-next,x11 --gpu-sw=yes`, sinon il
+> se rabat sur `sdl`, qui ignore `--wid` et ouvre sa propre fenêtre ; l'aperçu de l'onglet
+> « Fond animé » se passe toujours du décodage matériel (`--hwdec=no`), et le fond animé aussi
+> en rendu logiciel : mpv s'y bloque en cherchant un décodeur Vulkan.
 
 ---
 
@@ -201,9 +207,10 @@ Retoucher le style : `/usr/share/themes/Catppuccin-Mocha-Greeter/gtk-3.0/gtk.css
 | `ccsm` | Panneau de réglages de Compiz (effets, durées, raccourcis…) |
 | `xfce4-panel -r` | Relance les panneaux (si le dock est mal placé, ou s'il ne réapparaît qu'en passant la souris en haut de l'écran) |
 | `xfwm4 --replace &` | Relance le gestionnaire de fenêtres d'XFCE |
-| `relancer-picom` | Relance picom puis le panneau (mode xfwm4) : à utiliser au lieu de relancer picom à la main, sinon le dock ne réapparaît plus qu'en haut de l'écran |
+| `relancer-picom` | Relance picom puis le panneau (mode xfwm4) : à utiliser au lieu de relancer picom à la main, sinon le dock ne réapparaît plus qu'en haut de l'écran ; le panneau est arrêté puis redémarré (`xfce4-panel -r` ne le fait pas revenir sans gestionnaire de session), seulement s'il tourne |
 | `relancer-picom arreter` | Arrête picom, rend la main au compositeur d'xfwm4 et relance le panneau |
 | `bureau-modeles` | Met en place les réglages de départ du dossier `config/` qui manquent (`picom.conf`, shader, style du Alt+Tab désactivé, `picom.desktop`, `compiz.desktop`) ; n'écrase jamais rien. Lancé aussi par `installer.sh`, à l'ouverture de l'interface et par `fond-anime` |
+| `rendu-logiciel` | Réussit si OpenGL est dessiné en logiciel (machine virtuelle sans accélération 3D) : `bureau-modeles` règle alors picom en xrender, et le fond animé se passe du décodage matériel |
 
 ---
 
@@ -276,7 +283,7 @@ sudo apt install mpv   # fond animé
 
 | Élément | Chemin |
 |---|---|
-| Scripts | `bin/bureau-profil`, `bin/bureau-wm`, `bin/relancer-picom`, `bin/bureau-modeles` (ce dossier), liens dans `~/.local/bin/` |
+| Scripts | `bin/bureau-profil`, `bin/bureau-wm`, `bin/relancer-picom`, `bin/bureau-modeles`, `bin/rendu-logiciel` (ce dossier), liens dans `~/.local/bin/` |
 | Fond animé (programmes) | `bin/fond-anime`, `bin/fond-anime-video`, `bin/fond-anime-fond`, `bin/fond-anime-icones` (ce dossier), liens dans `~/.local/bin/` ; `~/.local/bin/xwinwrap` |
 | Fond animé (shader picom) | `config/picom/fond-anime.glsl` (ce dossier), copié dans `~/.config/picom/` |
 | Fond animé (vrai fond gardé de côté) | `~/.config/fond-anime/fond-xfdesktop.json` (pendant la vidéo) |

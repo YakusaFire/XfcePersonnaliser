@@ -40,7 +40,14 @@ copier() {
     cp "$MODELES/$1" "$2" && chmod u+w "$2" && echo "Ajouté : ${2/#$HOME/\~}"
 }
 
-copier picom/picom.conf "$CONF/picom/picom.conf"
+# Rendu OpenGL logiciel (machine virtuelle sans accélération 3D…) : picom en glx ne redessine
+# plus l'écran (panneau relancé invisible, fenêtres figées) ; xrender marche, sans le shader
+# du fond animé
+if copier picom/picom.conf "$CONF/picom/picom.conf" && "$ICI/rendu-logiciel"; then
+    sed -i 's|^backend = "glx";|# Rendu logiciel détecté (pas d’accélération 3D) : glx ne redessine plus l’écran, xrender\n# marche. Le fond animé sous le bureau a besoin de glx.\nbackend = "xrender";|' \
+        "$CONF/picom/picom.conf"
+    echo "Rendu logiciel : picom réglé en xrender"
+fi
 copier picom/fond-anime.glsl "$CONF/picom/fond-anime.glsl"
 
 # Alt+Tab : un gtk.css à soi (sans le style du projet) est laissé tel quel

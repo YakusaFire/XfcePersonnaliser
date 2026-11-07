@@ -87,6 +87,9 @@ EXT_VIDEOS = (".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".ogv", ".gif")
 # Les commandes du projet (bureau-profil, fond-anime…) sont prises à côté de l'interface, où
 # qu'elle soit installée : le PATH de la session n'a pas forcément ~/.local/bin
 os.environ["PATH"] = os.path.join(ICI, "bin") + os.pathsep + os.environ.get("PATH", "")
+# Sans accélération graphique, mpv se rabat sur sdl, qui ignore --wid et ouvre sa propre fenêtre :
+# seulement des sorties qui s'intègrent, et le rendu logiciel accepté (comme fond-anime)
+MPV_INTEGRE = ["--vo=gpu,gpu-next,x11", "--gpu-sw=yes"]  # ordre par défaut de mpv, sans sdl
 # L'aperçu (mpv) reçoit SIGTERM si l'interface s'arrête brutalement
 AVEC_PARENT = ["setpriv", "--pdeathsig", "TERM"] if shutil.which("setpriv") else []
 
@@ -141,9 +144,14 @@ if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit >/dev/
 for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
 setsid -f xfce4-panel >/dev/null 2>&1
 """
-# « xfce4-panel -r » attend sans fin si aucun panneau ne tourne : le panneau est alors démarré
+# Relance du panneau : arrêt (s'il tourne) puis démarrage. « xfce4-panel -r » attend sans fin sans
+# panneau, et sans gestionnaire de session pour le relancer, l'arrête sans le faire revenir
 RELANCE_PANNEAU = """
-if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel -r; else setsid -f xfce4-panel >/dev/null 2>&1; fi
+if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then
+    xfce4-panel --quit >/dev/null 2>&1
+    for _ in $(seq 30); do pgrep -u "$(id -u)" -x xfce4-panel >/dev/null || break; sleep 0.1; done
+fi
+setsid -f xfce4-panel >/dev/null 2>&1
 """
 # relancer-picom relance aussi le panneau, sinon la zone de survol du dock part en haut à gauche
 RELANCE_PICOM = "relancer-picom"
@@ -537,6 +545,9 @@ class Etat:
             return "Avec Compiz, le fond animé a besoin de xwinwrap, absent des dépôts Debian."
         if not self.programmes["picom"]:
             return f"Il faut picom pour placer la vidéo sous le bureau : {a_installer(['picom'])}"
+        if (self.picom.valeur("backend") or "").strip('"') == "xrender":
+            return ("La vidéo sous le bureau a besoin de picom en glx : ce PC dessine en logiciel (pas "
+                    "d’accélération 3D), picom y est donc réglé en xrender.")
         return None
 
     def trouver_profil_actif(self):
@@ -606,8 +617,10 @@ class Apercu(Gtk.DrawingArea):
             return
         try:
             self.proc = subprocess.Popen(
-                AVEC_PARENT + ["mpv", f"--wid={fenetre.get_xid()}", "--no-config", "--loop-file=inf", "--no-audio",
-                               "--panscan=1.0", "--hwdec=auto-safe", "--no-osc", "--osd-level=0", "--input-cursor=no",
+                # Pas de décodage matériel pour ce petit aperçu : en rendu logiciel, mpv se bloque
+                # en cherchant un décodeur Vulkan (lavapipe)
+                AVEC_PARENT + ["mpv", f"--wid={fenetre.get_xid()}", "--no-config", *MPV_INTEGRE, "--loop-file=inf", "--no-audio",
+                               "--panscan=1.0", "--hwdec=no", "--no-osc", "--osd-level=0", "--input-cursor=no",
                                "--input-vo-keyboard=no", "--cursor-autohide=no", "--stop-screensaver=no",
                                "--really-quiet", self.video],
                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
