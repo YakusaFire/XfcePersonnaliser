@@ -32,8 +32,19 @@ def xfconf(*args, canal="xfce4-desktop"):
     return subprocess.run(["xfconf-query", "-c", canal, *args], capture_output=True, text=True, env=C)
 
 
+def ecrans_xrandr():
+    """Noms des écrans branchés (eDP, HDMI-A-0, Virtual1…), tels qu'xfdesktop les met dans ses clés."""
+    try:
+        sortie = subprocess.run(["xrandr", "--listmonitors"], capture_output=True, text=True).stdout
+    except OSError:
+        return []
+    return re.findall(r"^\s*\d+:.*\s(\S+)$", sortie, re.M)
+
+
 def emplacements():
-    """Préfixes /backdrop/screenN/monitorX/workspaceN de tous les écrans et espaces de travail."""
+    """Préfixes /backdrop/screenN/monitorX/workspaceN de tous les écrans et espaces de travail.
+    Sur un compte neuf, seules d'anciennes clés « monitor0 » existent : xfdesktop 4.20 lit celles
+    au nom de l'écran (monitorVirtual1…), ajoutées ici d'après xrandr."""
     trouves = set()
     for prop in xfconf("-l").stdout.split():
         m = re.match(r"(/backdrop/screen\d+/monitor[^/]+)/workspace(\d+)/", prop)
@@ -41,7 +52,7 @@ def emplacements():
             trouves.add((m.group(1), int(m.group(2))))
     nb = xfconf("-p", "/general/workspace_count", canal="xfwm4").stdout.strip()
     nb = int(nb) if nb.isdigit() else 1
-    ecrans = {e for e, _ in trouves}
+    ecrans = {e for e, _ in trouves} | {f"/backdrop/screen0/monitor{n}" for n in ecrans_xrandr()}
     return sorted({f"{e}/workspace{n}" for e, n in trouves} | {f"{e}/workspace{n}" for e in ecrans for n in range(nb)})
 
 

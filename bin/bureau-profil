@@ -3,6 +3,8 @@
 #   bureau-profil save <nom>   enregistre l'apparence actuelle
 #   bureau-profil load <nom>   remet un profil enregistré
 #   bureau-profil list         liste les profils
+# Un profil « apparence seulement » (profils d'exemple) a un fichier reglages.conf au lieu des
+# canaux xfconf entiers : seules ses propriétés sont réglées, le reste du bureau n'est pas touché.
 set -euo pipefail
 ICI="$(dirname "$(realpath "$0")")"
 
@@ -18,6 +20,106 @@ EXTRA=(xfce4/panel terminator/config gtk-3.0/settings.ini gtk-3.0/gtk.css gtk-4.
 
 usage() { sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 
+# Dossiers de thèmes ou d'icônes (TYPE : themes ou icons), dans l'ordre de GTK
+dossiers_donnees() {
+    local d IFS=:
+    echo "$HOME/.$1"
+    echo "${XDG_DATA_HOME:-$HOME/.local/share}/$1"
+    for d in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do echo "$d/$1"; done
+}
+
+# present TYPE NOM CONTENU : le thème NOM est installé (il contient CONTENU)
+present() {
+    local d
+    while read -r d; do [ -e "$d/$2/$3" ] && return 0; done < <(dossiers_donnees "$1")
+    return 1
+}
+
+# theme_absent CANAL PROPRIÉTÉ VALEUR : la valeur désigne un thème qui n'est pas installé
+theme_absent() {
+    case "$1 $2" in
+        "xsettings /Net/ThemeName")
+            case "$3" in Adwaita|HighContrast|HighContrastInverse) return 1 ;; esac  # intégrés à GTK
+            ! present themes "$3" gtk-3.0/gtk.css ;;
+        "xsettings /Net/IconThemeName") ! present icons "$3" index.theme ;;
+        "xsettings /Gtk/CursorThemeName") ! present icons "$3" cursors ;;
+        "xfwm4 /general/theme") ! present themes "$3" xfwm4/themerc ;;
+        *) return 1 ;;
+    esac
+}
+
+# Image du bureau sur tous les écrans et espaces de travail (comme l'interface) : clés existantes,
+# plus celles qu'xfdesktop 4.20 lit (écran à son nom selon xrandr, un fond par espace de travail ;
+# un compte neuf n'a que d'anciennes clés « monitor0 »). Pendant le fond animé, le fond reste
+# masqué : la nouvelle image apparaîtra quand la vidéo s'arrêtera.
+mettre_fond() {
+    local cles c ecran n nb
+    nb=$(xfconf-query -c xfwm4 -p /general/workspace_count 2>/dev/null || true)
+    [[ $nb =~ ^[0-9]+$ ]] || nb=1
+    cles=$(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep '/last-image$' || true)
+    for ecran in $(xrandr --listmonitors 2>/dev/null | awk 'NR > 1 {print $NF}'); do
+        for n in $(seq 0 $((nb - 1))); do cles+=$'\n'"/backdrop/screen0/monitor$ecran/workspace$n/last-image"; done
+    done
+    for c in $(printf '%s\n' "$cles" | sort -u); do xfconf-query -c xfce4-desktop -p "$c" -n -t string -s "$1" || true; done
+}
+
+# Chemins des propriétés d'un fichier xfconf enregistré (comme « xfconf-query -l »)
+proprietes_xml() {
+    python3 - "$1" <<'EOF'
+import sys, xml.etree.ElementTree as ET
+def parcourir(noeud, prefixe):
+    for p in noeud.findall("property"):
+        chemin = prefixe + "/" + p.get("name", "")
+        if p.get("type") != "empty":
+            print(chemin)
+        parcourir(p, chemin)
+try:
+    parcourir(ET.parse(sys.argv[1]).getroot(), "")
+except (OSError, ET.ParseError):
+    pass
+EOF
+}
+
+# Avant l'échange des fichiers (xfconfd arrêté, aucun programme n'en serait prévenu) : les
+# propriétés actuelles absentes du profil sont retirées par xfconf, les programmes reprennent
+# leurs valeurs par défaut. Un canal noté absent (.absent) est vidé ; un ancien profil sans ce
+# canal n'y touche pas.
+retirer_absentes() {
+    local c garder k
+    for c in "${CHANNELS[@]}"; do
+        if [ -f "$1/xfconf/$c.xml" ]; then garder=$(proprietes_xml "$1/xfconf/$c.xml")
+        elif [ -f "$1/xfconf/$c.absent" ]; then garder=""
+        else continue
+        fi
+        while read -r k; do
+            [ -n "$k" ] || continue
+            grep -qxF -- "$k" <<< "$garder" || xfconf-query -c "$c" -p "$k" -r 2>/dev/null || true
+        done < <(xfconf-query -c "$c" -l 2>/dev/null)
+    done
+}
+
+# Profil « apparence seulement » : « canal propriété type valeur » par ligne, « fond CHEMIN »
+# (le chemin de l'image est tout le reste de la ligne, espaces compris, comme dans l'interface)
+SAUTES=0
+appliquer_reglages() {
+    local canal reste prop type valeur
+    while read -r canal reste; do
+        case "$canal" in ""|\#*) continue ;; esac
+        if [ "$canal" = fond ]; then
+            if [ -f "$reste" ]; then mettre_fond "$reste"
+            else echo "Image absente, fond gardé : $reste"; SAUTES=$((SAUTES + 1)); fi
+            continue
+        fi
+        read -r prop type valeur <<< "$reste"
+        if theme_absent "$canal" "$prop" "$valeur"; then
+            echo "Thème absent, réglage sauté : $valeur ($prop)"; SAUTES=$((SAUTES + 1))
+            continue
+        fi
+        xfconf-query -c "$canal" -p "$prop" -n -t "$type" -s "$valeur" ||
+            { echo "Réglage impossible : $canal $prop"; SAUTES=$((SAUTES + 1)); }
+    done < "$1"
+}
+
 # xfconfd garde les réglages en mémoire et ne les écrit qu'à sa sortie :
 # on l'arrête et on attend qu'il ait fini (il redémarre tout seul au besoin).
 flush_xfconf() {
@@ -30,7 +132,9 @@ save() {
     rm -rf "$p"; mkdir -p "$p/xfconf" "$p/config"
     flush_xfconf
     for c in "${CHANNELS[@]}"; do
-        [ -f "$XML/$c.xml" ] && cp "$XML/$c.xml" "$p/xfconf/"
+        if [ -f "$XML/$c.xml" ]; then cp "$XML/$c.xml" "$p/xfconf/"
+        else : > "$p/xfconf/$c.absent"  # canal jamais modifié : réglages par défaut, à remettre tels quels
+        fi
     done
     # Pendant le fond animé, le fond de xfdesktop est une couleur de masquage :
     # le profil garde le vrai fond d'écran
@@ -52,14 +156,29 @@ load() {
     # Sauvegarde automatique de l'état actuel avant d'écraser
     [ "$1" != "_avant-load" ] && save _avant-load >/dev/null
 
+    # Profil « apparence seulement » : xsettingsd, xfwm4 et le panneau suivent xfconf tout seuls,
+    # rien à relancer (Compiz : sa décoration est recalée sur le nouveau thème)
+    if [ -f "$p/reglages.conf" ]; then
+        appliquer_reglages "$p/reglages.conf"
+        if [ "$("$ICI/bureau-wm")" = compiz ]; then "$ICI/bureau-wm" theme; fi
+        local note=""
+        [ "$SAUTES" -eq 0 ] || note=", $SAUTES réglage(s) sauté(s)"
+        echo "Profil « $1 » appliqué : apparence seulement$note (ancien état gardé dans « _avant-load »)"
+        return 0
+    fi
+
     # Le panneau doit être arrêté avant de toucher à ses lanceurs, sinon il
     # voit leurs fichiers disparaître et vide sa liste.
     # Sans panneau lancé, « xfce4-panel --quit » (comme -r) attend sans fin : on ne l'appelle que s'il tourne
     if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit &>/dev/null || true; fi
     for _ in $(seq 50); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
+    retirer_absentes "$p"
     flush_xfconf
+    mkdir -p "$XML"
     for c in "${CHANNELS[@]}"; do
-        [ -f "$p/xfconf/$c.xml" ] && cp "$p/xfconf/$c.xml" "$XML/"
+        if [ -f "$p/xfconf/$c.xml" ]; then cp "$p/xfconf/$c.xml" "$XML/"
+        elif [ -f "$p/xfconf/$c.absent" ]; then rm -f "$XML/$c.xml"  # retour aux réglages par défaut
+        fi
     done
     for e in "${EXTRA[@]}"; do
         [ -e "$p/config/$e" ] || continue

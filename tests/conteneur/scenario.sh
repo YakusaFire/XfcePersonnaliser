@@ -45,6 +45,17 @@ en_essai xvfb-run -a dbus-run-session -- bash -c '
   timeout 20 bash /tmp/relance.sh; echo "code bouton avec panneau : $?"
 ' 2>&1 | grep -v -E "Gtk-WARNING|^$|dbus-daemon|dbind-WARNING|xfconfd-WARNING|xfwm4-WARNING|xfce4-panel-WARNING|^\\(xfsettingsd|Xlib|xfwm4-Message|libxfce4"
 
+etape "5b. Profils d'exemple (apparence seulement) : sombre, puis Annuler"
+en_essai xvfb-run -a dbus-run-session -- bash -c '
+  v() { echo "thème $(xfconf-query -c xsettings -p /Net/ThemeName 2>/dev/null) | icônes $(xfconf-query -c xsettings -p /Net/IconThemeName 2>/dev/null) | police $(xfconf-query -c xsettings -p /Gtk/FontName 2>/dev/null)"; }
+  echo "profils : $(ls ~/.config/bureau-profils | tr "\n" " ")"
+  echo "avant   : $(v)"
+  bureau-profil load sombre | tail -1
+  echo "sombre  : $(v)"
+  timeout 60 bureau-profil load _avant-load >/dev/null 2>&1; echo "code annuler : $?"
+  echo "annuler : $(v)"
+' 2>&1 | grep -v -E "Gtk-WARNING|^$|dbus-daemon|dbind-WARNING|xfconfd-WARNING|xfwm4-WARNING|xfce4-panel-WARNING|^\(xfsettingsd|Xlib|xfwm4-Message|libxfce4"
+
 etape "6. Écran de connexion (root du conteneur, sans RACINE)"
 bash /usr/share/xfce-personnaliser/greeter-catppuccin.sh
 grep -E '^(background|icon-theme|cursor|theme-name|font)' /etc/lightdm/lightdm-gtk-greeter.conf

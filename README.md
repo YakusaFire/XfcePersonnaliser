@@ -39,6 +39,9 @@ Pour l'utiliser et le modifier depuis ce dossier :
 Les commandes de `~/.local/bin` sont des liens vers ce dossier : relancer `installer.sh`
 s'il est déplacé.
 
+Au premier lancement, l'interface propose deux profils d'exemple, `sombre` et `clair`, qui ne
+changent que l'apparence (thème, icônes, police, panneau, fond) avec ce que Debian fournit.
+
 Ou en paquet Debian (Debian 13 ou plus récent), installé pour tout le système avec ses
 dépendances :
 

@@ -10,6 +10,8 @@
 #   ~/.config/gtk-3.0/gtk.css.desactive    style du Alt+Tab, désactivé (à allumer dans l'interface)
 #   ~/.config/autostart/picom.desktop      picom au démarrage ; désactivé si picom ne tourne pas
 #   ~/.config/autostart/compiz.desktop     Compiz au démarrage ; désactivé hors du mode Compiz
+#   ~/.config/bureau-profils/{sombre,clair} profils d'exemple (apparence seulement), au tout premier
+#                                          lancement : un dossier de profils déjà là n'est pas touché
 set -u
 ICI="$(dirname "$(realpath "$0")")"
 MODELES="$ICI/../config"
@@ -49,6 +51,17 @@ if copier picom/picom.conf "$CONF/picom/picom.conf" && "$ICI/rendu-logiciel"; th
     echo "Rendu logiciel : picom réglé en xrender"
 fi
 copier picom/fond-anime.glsl "$CONF/picom/fond-anime.glsl"
+
+# Profils d'exemple au tout premier lancement : un dossier de profils déjà là (profils à soi,
+# exemples mis à la corbeille) n'est pas touché, les exemples ne reviennent donc pas
+if [ ! -e "$CONF/bureau-profils" ] && [ -d "$MODELES/profils" ]; then
+    for d in "$MODELES/profils"/*/; do
+        n=$(basename "$d")
+        mkdir -p "$CONF/bureau-profils/$n"
+        cp "$d/reglages.conf" "$CONF/bureau-profils/$n/" && chmod u+w "$CONF/bureau-profils/$n/reglages.conf" &&
+            echo "Ajouté : profil d'exemple « $n »"
+    done
+fi
 
 # Alt+Tab : un gtk.css à soi (sans le style du projet) est laissé tel quel
 if [ ! -e "$CONF/gtk-3.0/gtk.css" ]; then

@@ -15,7 +15,9 @@ PROJET=$(dirname "$ICI")
 IMAGE=xfce-personnaliser-essai:base
 
 rm -rf "$PROJET/paquet"
-"$PROJET/construire-deb.sh" | head -1
+# sed lit tout : « head -1 » fermerait le tube avant la seconde ligne, et avec pipefail le
+# script s'arrêterait au hasard (code 141, SIGPIPE)
+"$PROJET/construire-deb.sh" | sed -n 1p
 
 if [ "${1:-}" = --refaire ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "Préparation de l'image d'essai (téléchargements la première fois)…"

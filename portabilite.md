@@ -13,16 +13,14 @@ main sur cette machine, qu'aucun script ne crée.
 
 | | Fichier | Utilisé par | Ce qui se passe s'il manque |
 |---|---|---|---|
-| 🔴 | `~/.config/picom/picom.conf` (picom 12, avec `rules = ( … )` et `animations = ( … )`) | `fond-anime` (`preparer_picom`), onglet Effets de l'interface (`ConfigPicom`) | Le fond animé ne passe jamais sous le bureau : il retombe sur xwinwrap (icônes en lecture seule). Les réglages d'ombres, coins arrondis et animations n'ont aucun effet. picom tourne avec ses réglages par défaut. |
-| 🔴 | `~/.config/autostart/picom.desktop` (coupe le compositeur d'xfwm4, lance picom, relance le panneau 4 s après) | `bureau-wm`, `bureau-profil load`, `fond-anime` (`picom_pret`), interrupteur picom de l'interface (`autostart_regler`) | L'interrupteur picom ne fait rien (`autostart_regler` sort sans rien écrire). `picom_pret` répond « pas de picom ». picom ne démarre pas à l'ouverture de session. |
-| 🔴 | `~/.config/autostart/compiz.desktop` | `bureau-wm compiz` | Compiz marche pour la session en cours mais ne revient pas à la session suivante. |
-| 🟠 | `~/.config/gtk-3.0/gtk.css` (style du Alt+Tab, `xfwm-tabwin`) | Interrupteur Alt+Tab | L'interrupteur est grisé (`alttab_dispo` faux) : la fonction n'existe pas pour les autres. |
-| 🟠 | Profils `catppuccin`, `macos-sombre`, `macos-clair` dans `~/.config/bureau-profils/` | Onglet Profils | Liste vide au premier lancement : rien à essayer. |
+| ✅ | `~/.config/picom/picom.conf` (picom 12, avec `rules = ( … )` et `animations = ( … )`) | `fond-anime` (`preparer_picom`), onglet Effets de l'interface (`ConfigPicom`) | Le fond animé ne passe jamais sous le bureau : il retombe sur xwinwrap (icônes en lecture seule). Les réglages d'ombres, coins arrondis et animations n'ont aucun effet. picom tourne avec ses réglages par défaut. |
+| ✅ | `~/.config/autostart/picom.desktop` (coupe le compositeur d'xfwm4, lance picom, relance le panneau 4 s après) | `bureau-wm`, `bureau-profil load`, `fond-anime` (`picom_pret`), interrupteur picom de l'interface (`autostart_regler`) | L'interrupteur picom ne fait rien (`autostart_regler` sort sans rien écrire). `picom_pret` répond « pas de picom ». picom ne démarre pas à l'ouverture de session. |
+| ✅ | `~/.config/autostart/compiz.desktop` | `bureau-wm compiz` | Compiz marche pour la session en cours mais ne revient pas à la session suivante. |
+| ✅ | `~/.config/gtk-3.0/gtk.css` (style du Alt+Tab, `xfwm-tabwin`) | Interrupteur Alt+Tab | L'interrupteur est grisé (`alttab_dispo` faux) : la fonction n'existe pas pour les autres. |
+| ✅ | Profils `catppuccin`, `macos-sombre`, `macos-clair` dans `~/.config/bureau-profils/` | Onglet Profils | Liste vide au premier lancement : rien à essayer. **Corrigé** : profils d'exemple `sombre` et `clair` (apparence seulement, thèmes de Debian). |
 
-**À faire** : mettre des modèles dans `config/` (picom.conf, les deux `.desktop`, le CSS du
-Alt+Tab) et les installer au premier lancement **seulement s'ils n'existent pas**. Ne jamais
-écraser un `picom.conf` existant : ajouter alors juste la règle du fond animé, comme le fait
-déjà `preparer_picom`.
+**Fait (étape 2)** : modèles dans `config/`, installés par `bin/bureau-modeles` au premier
+lancement, seulement s'ils manquent ; profils d'exemple dans `config/profils/`.
 
 ## 2. Thèmes, icônes, polices et fonds supposés présents
 
@@ -96,7 +94,7 @@ la fenêtre de `fond-anime-video`.
 | 🔴 | Session **XFCE** | Avec GNOME ou KDE, xfconf, xfwm4 et xfdesktop ne servent à rien : l'interface affiche des réglages sans effet. Il faut vérifier `XDG_CURRENT_DESKTOP` au lancement et prévenir. |
 | 🔴 | Session **X11** | Sous Wayland (XFCE 4.20 le propose à titre expérimental), picom, `mpv --wid`, xprop et les fenêtres override-redirect ne marchent pas. Vérifier `XDG_SESSION_TYPE`. |
 | 🟠 | Le dock est le **panneau 2**, en masquage intelligent, et la relance du panneau corrige sa zone de survol | Avec un autre agencement de panneaux, la relance ne gêne pas mais l'explication de l'interface ne colle plus. Rien de cassé. |
-| 🟠 | Carte graphique qui gère bien `backend = "glx"` | Sur une machine virtuelle ou un vieux pilote, picom glx peut échouer ou afficher un écran noir : prévoir un repli sur `xrender` et une vérification `pgrep -x picom` après le lancement. |
+| ✅ | Carte graphique qui gère bien `backend = "glx"` | | **Corrigé** : `bin/rendu-logiciel` détecte le rendu OpenGL logiciel ; `bureau-modeles` règle alors picom en xrender. |
 | 🟢 | `XDG_VTNR` défini (pause quand on change de console) | Déjà géré : la vérification est sautée s'il manque. |
 | 🟢 | Un seul utilisateur, droits sudo / polkit | Normal pour un poste perso. |
 
@@ -120,7 +118,12 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    déjà ; le Alt+Tab arrive désactivé ; elles ne lancent rien si le programme manque.
    Les images de fond sont rangées dans `fonds/` (galerie, ajout par copie, écran de
    connexion) et les sélecteurs de fichiers s'ouvrent dans le dossier Images / Vidéos XDG.
-   Reste : des profils d'exemple. *(sections 1 et 3)*
+   ✅ Profils d'exemple *(7/11)* : `sombre` et `clair`, « apparence seulement » (`reglages.conf`
+   réglé propriété par propriété, rien d'autre n'est touché ni relancé), proposés au premier
+   lancement. Testé dans la VM neuve, avec « Annuler ». Le test a aussi révélé et fait corriger,
+   sur tout compte neuf : clés du fond au nom de l'écran (`monitorVirtual1/workspaceN`) absentes,
+   donc galerie, profils et masquage du fond animé sans effet ; canaux xfconf jamais écrits, donc
+   « Annuler » incomplet. *(sections 1 et 3)*
 3. ✅ **Chemins** *(fait le 6/11)* : plus de `~/.local/bin` supposé dans les entrées de
    démarrage ni dans le PATH de l'interface ; dossiers XDG suivis partout ; images et vidéos
    dans `~/.local/share/bureau-reglages/` quand le logiciel est en lecture seule (l'interface

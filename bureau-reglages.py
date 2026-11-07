@@ -446,14 +446,35 @@ def noms_profils():
         return []
 
 
+def lire_reglages(chemin):
+    """Profil « apparence seulement » (reglages.conf) : {(canal, propriété): valeur} et image du fond."""
+    props, fond = {}, ""
+    for ligne in lire(chemin).splitlines():
+        champs = ligne.split(None, 3)
+        if not champs or champs[0].startswith("#"):
+            continue
+        if champs[0] == "fond" and len(champs) >= 2:
+            fond = ligne.split(None, 1)[1].strip()
+        elif len(champs) == 4:
+            props[(champs[0], champs[1])] = champs[3].strip()
+    return props, fond
+
+
 def lire_profil(nom):
+    reglages = os.path.join(PROFILS, nom, "reglages.conf")
+    if os.path.isfile(reglages):
+        props, fond = lire_reglages(reglages)
+        return {"gtk": props.get(("xsettings", "/Net/ThemeName"), ""),
+                "icones": props.get(("xsettings", "/Net/IconThemeName"), ""),
+                "curseur": props.get(("xsettings", "/Gtk/CursorThemeName"), ""),
+                "wm": props.get(("xfwm4", "/general/theme"), ""), "fond": fond, "partiel": True}
     base = os.path.join(PROFILS, nom, "xfconf")
     xs = proprietes_xml(os.path.join(base, "xsettings.xml"))
     wm = proprietes_xml(os.path.join(base, "xfwm4.xml"))
     bureau = proprietes_xml(os.path.join(base, "xfce4-desktop.xml"))
     return {"gtk": xs.get("/Net/ThemeName", ""), "icones": xs.get("/Net/IconThemeName", ""),
             "curseur": xs.get("/Gtk/CursorThemeName", ""), "wm": wm.get("/general/theme", ""),
-            "fond": fond_principal(bureau)}
+            "fond": fond_principal(bureau), "partiel": False}
 
 
 class ConfigPicom:
@@ -556,7 +577,7 @@ class Etat:
         for nom, p in self.profils.items():
             if nom == ANNULER or any(p[k] != self.actuel[k] for k in ("gtk", "icones", "wm")):
                 continue
-            score = sum(p[k] == self.actuel[k] for k in p)
+            score = sum(p[k] == self.actuel[k] for k in self.actuel)
             if score > score_max:
                 meilleur, score_max = nom, score
         return meilleur
@@ -905,8 +926,10 @@ class Fenetre(Gtk.ApplicationWindow):
             badge.get_style_context().add_class("badge")
             titre.pack_start(badge, False, False, 0)
         textes.pack_start(titre, False, False, 0)
-        details = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END,
-                            label=" · ".join(x for x in (p["gtk"], p["icones"], os.path.basename(p["fond"])) if x))
+        # Profil d'exemple : il ne change que l'apparence (thèmes, polices, fond)
+        champs = ["apparence seulement"] if p["partiel"] else []
+        champs += [x for x in (p["gtk"], p["icones"], os.path.basename(p["fond"])) if x]
+        details = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END, label=" · ".join(champs))
         details.get_style_context().add_class("dim-label")
         textes.pack_start(details, False, False, 0)
         b.pack_start(textes, True, True, 0)
@@ -1121,15 +1144,17 @@ class Fenetre(Gtk.ApplicationWindow):
         self.alerte_anime.set_visible(e.fond_anime)
 
     def choisir_fond(self, chemin):
-        cles = [k for k in self.etat.bureau if k.endswith("/last-image")]
-        if not cles:
-            try:
-                sortie = subprocess.run(["xrandr", "--listmonitors"], capture_output=True, text=True).stdout
-            except OSError:
-                sortie = ""
-            ecrans = re.findall(r"^\s*\d+:.*\s(\S+)$", sortie, re.M)
-            cles = [f"/backdrop/screen0/monitor{nom}/workspace0/last-image" for nom in ecrans]
-        for cle in cles:
+        # Clés existantes, plus celles qu'xfdesktop 4.20 lit : écran à son nom (xrandr) et un fond
+        # par espace de travail. Sur un compte neuf, seules d'anciennes clés « monitor0 » existent.
+        cles = {k for k in self.etat.bureau if k.endswith("/last-image")}
+        try:
+            sortie = subprocess.run(["xrandr", "--listmonitors"], capture_output=True, text=True).stdout
+        except OSError:
+            sortie = ""
+        nb = entier(self.etat.xfwm4.get("/general/workspace_count"), 1)
+        for nom in re.findall(r"^\s*\d+:.*\s(\S+)$", sortie, re.M):
+            cles |= {f"/backdrop/screen0/monitor{nom}/workspace{n}/last-image" for n in range(nb)}
+        for cle in sorted(cles):
             xfconf_regler("xfce4-desktop", cle, chemin)
         self.statut(f"Fond d'écran : {os.path.basename(chemin)}", "emblem-ok-symbolic")
         self.actualiser()

@@ -67,7 +67,8 @@ Maintainer: $MAINTENEUR
 Installed-Size: $(du -sk "$RACINE/usr" | cut -f1)
 Depends: python3, python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-3.0, xfconf, xfwm4,
  xfdesktop4, xfce4-panel, xfce4-settings, x11-utils, x11-xserver-utils, procps, libx11-6, libxext6
-Recommends: picom (>= 12), mpv, ffmpeg, mesa-utils, xdg-utils, exo-utils, papirus-icon-theme, fonts-inter
+Recommends: picom (>= 12), mpv, ffmpeg, mesa-utils, xdg-utils, exo-utils, papirus-icon-theme, fonts-inter,
+ gnome-themes-extra
 Suggests: compiz-core, compiz-gnome, compiz-plugins, compizconfig-settings-manager, marco-common,
  lightdm, lightdm-gtk-greeter, pkexec
 Homepage: https://github.com/YakusaFire/XfcePersonnaliser

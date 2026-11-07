@@ -63,6 +63,26 @@ bureau-profil save mon-theme
 
 > Le dernier profil chargé reste actif après un redémarrage.
 > Chaque `load` sauvegarde d'abord l'état actuel dans `_avant-load`.
+> Un canal xfconf encore jamais modifié (compte neuf) est noté `xfconf/<canal>.absent` à
+> l'enregistrement : le charger remet les réglages par défaut. Avant l'échange des fichiers,
+> les propriétés absentes du profil sont retirées par xfconf, pour que les programmes (xfdesktop…)
+> reprennent leur valeur par défaut au lieu de garder l'ancienne en mémoire.
+
+**Profils d'exemple** (`config/profils/`), mis en place au tout premier lancement de
+l'interface, si `~/.config/bureau-profils` n'existe pas encore (mis à la corbeille, ils ne
+reviennent pas) :
+
+| Profil | Style |
+|---|---|
+| `sombre` | Adwaita-dark, icônes Papirus-Dark, curseur Adwaita, police Inter, panneau sombre, fond `xfce-cp-dark.svg` |
+| `clair` | Adwaita, icônes Papirus, curseur Adwaita, police Inter, panneau clair, fond `xfce-teal.svg` |
+
+Ce sont des profils **« apparence seulement »** : un fichier `reglages.conf` au lieu des canaux
+xfconf entiers. Chaque ligne `canal propriété type valeur` est réglée par `xfconf-query` (le
+reste du bureau, panneaux et lanceurs compris, n'est pas touché, et rien n'est relancé) ;
+`fond CHEMIN` met l'image sur tous les écrans et espaces de travail. Un thème absent est sauté
+(le message dit combien). Tout vient de Debian ; décoration xfwm4 `Default`, qui suit les
+couleurs du thème GTK. « Annuler le dernier chargement » remet l'apparence d'avant.
 
 ---
 
