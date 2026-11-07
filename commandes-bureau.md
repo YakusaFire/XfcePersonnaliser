@@ -273,6 +273,7 @@ Les commandes se lancent depuis le dossier du projet.
 | `sudo apt install ./paquet/xfce-personnaliser_*_all.deb` | Installe le paquet et ses dépendances |
 | `sudo apt remove xfce-personnaliser` | Le désinstalle (les réglages de `~/.config` restent) |
 | `dpkg-deb --contents paquet/*.deb` | Liste ce que contient le paquet |
+| `lintian --pedantic paquet/*.deb` | Contrôle le paquet selon les règles de Debian (paquet `lintian`) ; restent seulement les avertissements « pas de page de manuel » |
 | `tests/tester-paquet.sh` | Construit le paquet et le teste dans un Debian 13 neuf (conteneur Docker, sans réseau après la 1re fois) |
 | `tests/tester-paquet.sh --refaire` | Même chose en préparant de nouveau l'image d'essai |
 

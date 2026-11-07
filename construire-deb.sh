@@ -71,7 +71,37 @@ License: GPL-3+
  On Debian systems, the complete text of the GNU General Public License
  version 3 can be found in "/usr/share/common-licenses/GPL-3".
 EOF
-chmod 644 "$RACINE/usr/share/applications/bureau-reglages.desktop" "$RACINE/usr/share/doc/$NOM/copyright"
+
+# Journal des versions, exigé par Debian (paquet natif : changelog.gz, compressé au maximum et sans
+# date dans l'en-tête gzip). Une seule entrée, pour la version construite : l'historique détaillé
+# est celui de git. Date du dernier commit, pour qu'une même version donne le même paquet.
+gzip -9n > "$RACINE/usr/share/doc/$NOM/changelog.gz" <<EOF
+$NOM ($VERSION) unstable; urgency=medium
+
+  * Construit depuis le commit $(git rev-parse --short HEAD) du dépôt
+    https://github.com/YakusaFire/XfcePersonnaliser (historique : git log).
+
+ -- $MAINTENEUR  $(date -R -d "@$(git log -1 --format=%ct)")
+EOF
+
+# Exception déclarée à lintian : le mémo n'est pas dans /usr/share/doc parce que l'interface
+# l'ouvre depuis son propre dossier, et dpkg peut exclure /usr/share/doc (systèmes minimaux)
+mkdir -p "$RACINE/usr/share/lintian/overrides"
+cat > "$RACINE/usr/share/lintian/overrides/$NOM" <<EOF
+# Ouvert par l'interface « Personnalisation du bureau » (MEMO dans bureau-reglages.py)
+$NOM: package-contains-documentation-outside-usr-share-doc [usr/share/$NOM/commandes-bureau.md]
+EOF
+chmod 644 "$RACINE/usr/share/applications/bureau-reglages.desktop" "$RACINE/usr/share/doc/$NOM/copyright" \
+    "$RACINE/usr/share/doc/$NOM/changelog.gz" "$RACINE/usr/share/lintian/overrides/$NOM"
+
+# Champs de dépendances : une seule ligne dans le fichier de contrôle d'un paquet binaire
+liste() { local r; r=$(printf '%s, ' "$@"); echo "${r%, }"; }
+DEPENDS=$(liste python3 python3-gi python3-gi-cairo python3-cairo gir1.2-gtk-3.0 xfconf xfwm4 \
+    xfdesktop4 xfce4-panel xfce4-settings x11-utils x11-xserver-utils procps libx11-6 libxext6)
+RECOMMANDE=$(liste "picom (>= 12)" mpv ffmpeg mesa-utils xdg-utils exo-utils papirus-icon-theme \
+    fonts-inter gnome-themes-extra)
+SUGGERE=$(liste compiz-core compiz-gnome compiz-plugins compizconfig-settings-manager marco-common \
+    lightdm lightdm-gtk-greeter pkexec)
 
 cat > "$RACINE/DEBIAN/control" <<EOF
 Package: $NOM
@@ -81,15 +111,12 @@ Priority: optional
 Architecture: all
 Maintainer: $MAINTENEUR
 Installed-Size: $(du -sk "$RACINE/usr" | cut -f1)
-Depends: python3, python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-3.0, xfconf, xfwm4,
- xfdesktop4, xfce4-panel, xfce4-settings, x11-utils, x11-xserver-utils, procps, libx11-6, libxext6
-Recommends: picom (>= 12), mpv, ffmpeg, mesa-utils, xdg-utils, exo-utils, papirus-icon-theme, fonts-inter,
- gnome-themes-extra
-Suggests: compiz-core, compiz-gnome, compiz-plugins, compizconfig-settings-manager, marco-common,
- lightdm, lightdm-gtk-greeter, pkexec
+Depends: $DEPENDS
+Recommends: $RECOMMANDE
+Suggests: $SUGGERE
 Homepage: https://github.com/YakusaFire/XfcePersonnaliser
-Description: personnalisation du bureau XFCE : profils, effets, fond animé
- Interface GTK « Personnalisation du bureau » et commandes pour XFCE sous X11 :
+Description: personnalisation du bureau Xfce : profils, effets, fond animé
+ Interface GTK « Personnalisation du bureau » et commandes pour Xfce sous X11 :
  profils d'apparence complets, effets de fenêtres avec picom (ombres, coins
  arrondis, animations) ou Compiz (effet Génie), fond d'écran animé derrière les
  icônes du bureau, et style Catppuccin Mocha pour l'écran de connexion LightDM.
@@ -97,6 +124,10 @@ Description: personnalisation du bureau XFCE : profils, effets, fond animé
  Ce qui manque (picom, mpv, Compiz, LightDM…) est grisé dans l'interface, avec
  la commande pour l'installer.
 EOF
+
+# Sommes de contrôle des fichiers installés (dpkg --verify, debsums)
+(cd "$RACINE" && find usr -type f -print0 | sort -z | xargs -0 md5sum) > "$RACINE/DEBIAN/md5sums"
+chmod 644 "$RACINE/DEBIAN/md5sums"
 
 DEB="$SORTIE/${NOM}_${VERSION}_all.deb"
 dpkg-deb --root-owner-group -Zxz --build "$RACINE" "$DEB" >/dev/null
