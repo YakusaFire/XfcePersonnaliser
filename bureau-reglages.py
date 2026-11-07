@@ -102,10 +102,8 @@ PAQUETS = {
     "compiz": "compiz-core", "gtk-window-decorator": "compiz-gnome", "ccsm": "compizconfig-settings-manager",
     "pkexec": "pkexec", "lightdm-gtk-greeter": "lightdm-gtk-greeter", "dm-tool": "lightdm",
 }
-# lightdm-gtk-greeter est rangé dans /usr/sbin, souvent absent du PATH d'un utilisateur ;
-# xwinwrap, compilé à la main, est cherché aussi dans ~/.local/bin (comme le fait fond-anime)
-CHEMIN_PROGRAMMES = os.pathsep.join([os.environ["PATH"], os.path.join(HOME, ".local", "bin"),
-                                     "/usr/local/sbin", "/usr/sbin", "/sbin"])
+# lightdm-gtk-greeter est rangé dans /usr/sbin, souvent absent du PATH d'un utilisateur
+CHEMIN_PROGRAMMES = os.pathsep.join([os.environ["PATH"], "/usr/local/sbin", "/usr/sbin", "/sbin"])
 COMPIZ = ("compiz", "gtk-window-decorator")
 GREETER = ("pkexec", "lightdm-gtk-greeter")
 
@@ -523,14 +521,15 @@ class Etat:
         self.alttab_dispo = self.alttab or os.path.exists(ALTTAB_OFF)
         self.greeter = bool(re.search(rf"^theme-name\s*=\s*{GREETER_THEME}\s*$", lire(GREETER_CONF), re.M))
         self.fond_anime = processus("-f", "^mpv .*fond-anime-mp[v]")
-        self.fond_anime_bureau = processus("-f", "^python3 [^ ]*/fond-anime-vide[o] ")  # vidéo sous le bureau
+        # Vidéo sous le bureau : fond-anime-video lancé sans --type-bureau (la géométrie vient en premier)
+        self.fond_anime_bureau = processus("-f", "^python3 [^ ]*/fond-anime-vide[o] [0-9]")
         self.fond_anime_auto = autostart_actif("fond-anime", False)
         self.pause_auto = lire(PAUSE_AUTO).strip() != "off"
         self.video_en_pause = self.fond_anime and video_en_pause()
         self.video = lire(VIDEO_ANIMEE).strip()
         self.videos = videos_disponibles()
         # Programmes présents, relus à chaque actualisation : un paquet installé entre-temps est vu
-        self.programmes = {c: installe(c) for c in [*PAQUETS, "xwinwrap"]}
+        self.programmes = {c: installe(c) for c in PAQUETS}
 
     def manquants(self, *commandes):
         return [c for c in commandes if not self.programmes[c]]
@@ -539,15 +538,19 @@ class Etat:
         """Pourquoi le fond animé ne peut pas se lancer (None s'il le peut)."""
         if not self.programmes["mpv"]:
             return f"Il faut mpv pour lire la vidéo : {a_installer(['mpv'])}"
-        if self.programmes["xwinwrap"]:
-            return None  # vidéo par-dessus le bureau, avec ou sans picom
+        return None
+
+    def pourquoi_par_dessus(self):
+        """Pourquoi la vidéo ne passera pas sous le bureau (None si elle le peut) : fond-anime la pose
+        alors sur le bureau, et ses icônes sont en lecture seule."""
         if self.mode == "compiz":
-            return "Avec Compiz, le fond animé a besoin de xwinwrap, absent des dépôts Debian."
+            return "avec Compiz, picom ne tourne pas"
         if not self.programmes["picom"]:
-            return f"Il faut picom pour placer la vidéo sous le bureau : {a_installer(['picom'])}"
+            return f"picom n'est pas installé ({a_installer(['picom'])})"
         if (self.picom.valeur("backend") or "").strip('"') == "xrender":
-            return ("La vidéo sous le bureau a besoin de picom en glx : ce PC dessine en logiciel (pas "
-                    "d’accélération 3D), picom y est donc réglé en xrender.")
+            return "picom est en xrender, faute d’accélération 3D (la vidéo sous le bureau demande glx)"
+        if not self.picom_actif:
+            return "picom est désactivé"
         return None
 
     def trouver_profil_actif(self):
@@ -1187,7 +1190,7 @@ class Fenetre(Gtk.ApplicationWindow):
                    ligne("Pause automatique",
                          "La vidéo s'arrête quand une fenêtre est en plein écran ou agrandie, quand l'écran "
                          "s'éteint ou que la session est verrouillée, et reprend dès que le bureau se revoit. "
-                         "Économise le processeur, la carte graphique et la batterie (avec picom).",
+                         "Économise le processeur, la carte graphique et la batterie.",
                          self.switch_pause_auto))
 
         # Aperçu de la vidéo choisie dans la liste
@@ -1244,18 +1247,21 @@ class Fenetre(Gtk.ApplicationWindow):
         self.switch_anime_auto.set_active(e.fond_anime_auto)
         self.switch_pause_auto.set_active(e.pause_auto)
         nom = os.path.basename(e.video) if e.video else ""
+        par_dessus = e.pourquoi_par_dessus()
         if e.fond_anime:
-            icones = ("icônes du bureau utilisables normalement" if e.fond_anime_bureau
-                      else "icônes en lecture seule, car picom ne tourne pas")
-            texte = f"Lancé avec « {nom} » : {icones}."
+            if e.fond_anime_bureau:
+                texte = f"Lancé avec « {nom} » : icônes du bureau utilisables normalement."
+            else:
+                texte = f"Lancé avec « {nom} », par-dessus le bureau : icônes en lecture seule" + \
+                    (f", car {par_dessus}." if par_dessus else ".")
             if e.video_en_pause:
                 texte += " En pause tant que le bureau est caché."
         elif e.raison_fond_anime():
             texte = f"Indisponible. {e.raison_fond_anime()}"
-        elif nom:
-            texte = f"Arrêté. À l'activation : « {nom} »."
         else:
-            texte = "Arrêté. Choisis une vidéo ci-dessous."
+            texte = f"Arrêté. À l'activation : « {nom} »." if nom else "Arrêté. Choisis une vidéo ci-dessous."
+            if par_dessus:
+                texte += f" Icônes du bureau en lecture seule pendant la vidéo, car {par_dessus}."
         if not e.programmes["ffmpeg"]:
             texte += ("" if texte.endswith(".") else ".") + \
                 f" Sans ffmpeg, pas de miniatures ni de couleur de fond assortie : {a_installer(['ffmpeg'])}"
