@@ -18,6 +18,7 @@ et une interface graphique qui regroupe le tout.
 | `config/picom/fond-anime.glsl` | Shader picom qui laisse voir la vidéo derrière les icônes |
 | `config/` (autres fichiers) | Réglages de départ : `picom.conf`, style du Alt+Tab, démarrage de picom et de Compiz |
 | `bin/bureau-modeles` | Copie les réglages de départ qui manquent, sans jamais écraser un fichier |
+| `bin/rendu-logiciel` | Détecte un rendu OpenGL logiciel (machine virtuelle sans 3D) : picom passe alors en xrender |
 | `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand picom ne tourne pas |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
 | `installer.sh` | Installe les commandes dans `~/.local/bin` et l'entrée du menu |
@@ -62,7 +63,9 @@ reçoit ses réglages de départ au premier lancement de l'interface.
   complètent le rendu).
 
 L'interface grise ce dont le programme manque et donne la commande `sudo apt install …` ;
-elle prévient si la session n'est pas XFCE sous X11. Ce qui reste à faire pour que le projet
+elle prévient si la session n'est pas XFCE sous X11. Sans accélération graphique (machine
+virtuelle sans 3D), picom est réglé en xrender et le fond animé sous le bureau n'est pas
+disponible : il a besoin de glx. Ce qui reste à faire pour que le projet
 marche sur n'importe quel Debian est listé dans [portabilite.md](portabilite.md).
 
 ## Utilisation

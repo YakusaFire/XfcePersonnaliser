@@ -110,6 +110,8 @@ picom_pret() {
 preparer_picom() {
     [ -f "$PICOM_CONF" ] || "$ICI/bureau-modeles" >/dev/null
     [ -f "$PICOM_CONF" ] && grep -q '^rules = (' "$PICOM_CONF" || return 1
+    # Le shader qui rend le bureau transparent demande glx (en xrender : rendu logiciel)
+    ! grep -q '^backend = "xrender"' "$PICOM_CONF" || return 1
     local dossier change=0
     dossier="$(dirname "$PICOM_CONF")"
     if ! cmp -s "$ICI/../config/picom/$SHADER" "$dossier/$SHADER"; then
@@ -146,15 +148,22 @@ start() {
     fi
     realpath "$video" > "$SAVED"
 
+    # Décodage matériel, sauf en rendu logiciel : mpv s'y bloque en cherchant un décodeur Vulkan
+    local hwdec=auto-safe
+    if "$ICI/rendu-logiciel"; then hwdec=no; fi
+
     # taille totale de l'écran (tous moniteurs confondus)
     local geom
     geom="$(xrandr | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p')+0+0"
     local lecteur=(mpv -wid WID
+        # Sans accélération graphique, mpv se rabattrait sur sdl, qui ignore -wid et ouvre sa
+        # propre fenêtre : seulement des sorties qui s'intègrent, et le rendu logiciel accepté
+        --vo=gpu,gpu-next,x11 --gpu-sw=yes
         --x11-name=fond-anime-mpv
         --loop-file=inf
         --no-audio
         --panscan=1.0
-        --hwdec=auto-safe
+        --hwdec="$hwdec"
         --no-osc --no-osd-bar --osd-level=0
         --no-input-default-bindings --input-vo-keyboard=no
         --cursor-autohide=no
@@ -179,6 +188,9 @@ start() {
                 echo "Avec Compiz, le fond animé a besoin de xwinwrap (absent des dépôts Debian)." >&2
             elif ! command -v picom >/dev/null; then
                 echo "Il faut picom pour placer la vidéo sous le bureau. Lance : sudo apt install picom" >&2
+            elif grep -q '^backend = "xrender"' "$PICOM_CONF" 2>/dev/null; then
+                echo "picom dessine en xrender (rendu logiciel, pas d’accélération 3D) : la vidéo sous le" \
+                     "bureau a besoin de glx ; sans lui, le fond animé a besoin de xwinwrap." >&2
             else
                 echo "picom ne tourne pas, ou ${PICOM_CONF/#$HOME/\~} n'a pas de bloc « rules = ( … ) » (picom 12) ;" \
                      "sans picom prêt, le fond animé a besoin de xwinwrap." >&2

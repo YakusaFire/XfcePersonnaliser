@@ -1,0 +1,9 @@
+#!/bin/bash
+# rendu-logiciel : réussit si OpenGL est dessiné en logiciel (llvmpipe, softpipe…), comme dans
+# une machine virtuelle sans accélération 3D. Sans glxinfo (paquet mesa-utils) ou sans écran,
+# échoue : on suppose alors une vraie carte graphique.
+#   rendu-logiciel && echo "rendu logiciel"
+# Utilisé par bureau-modeles (picom en xrender : en glx, il ne redessine plus l'écran) et par
+# fond-anime (pas de décodage matériel : mpv se bloque en cherchant un décodeur Vulkan).
+command -v glxinfo >/dev/null || exit 1
+glxinfo -B 2>/dev/null | grep -qiE 'Accelerated: no|renderer string: .*(llvmpipe|softpipe|swrast)'

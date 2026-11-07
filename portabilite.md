@@ -145,7 +145,18 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    - liste des thèmes GTK vide sur un système neuf (Adwaita est intégré à GTK) ;
    - copies de `bureau-modeles` en lecture seule si le modèle l'était.
 
-   **Reste** : un essai dans une vraie session XFCE (machine virtuelle, pour l'affichage),
-   passer `lintian` (absent ici), et choisir une licence (le dépôt n'en a pas : le fichier
-   `copyright` du paquet le dit).
+   **Testé dans une vraie session XFCE** *(7/11)* : machine virtuelle VirtualBox, Debian 13
+   installé, sans accélération 3D (OpenGL en logiciel, llvmpipe). Révélé et corrigé :
+   - picom en glx ne redessine plus l'écran en rendu logiciel : le panneau relancé après picom
+     restait invisible, les fenêtres figées. `bin/rendu-logiciel` le détecte (`glxinfo`,
+     paquet `mesa-utils` recommandé) et `bureau-modeles` règle alors picom en xrender ; le fond
+     animé sous le bureau, qui a besoin du shader de glx, est alors indisponible, avec le motif ;
+   - mpv se rabattait sur `sdl`, qui ignore `--wid` : l'aperçu et le fond animé ouvraient de
+     grandes fenêtres. Sorties limitées à `gpu,gpu-next,x11`, rendu logiciel accepté ;
+   - mpv se bloquait en cherchant un décodeur Vulkan (lavapipe) : pas de décodage matériel pour
+     l'aperçu, ni pour le fond animé en rendu logiciel.
+
+   **Reste** : un essai avec accélération 3D (dans cette VM, la 3D de VirtualBox ralentissait
+   tout et bloquait les instantanés), passer `lintian` (absent ici), et choisir une licence (le
+   dépôt n'en a pas : le fichier `copyright` du paquet le dit).
 6. Facultatif : xwinwrap, Debian 12, traduction.

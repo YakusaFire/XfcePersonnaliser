@@ -16,8 +16,13 @@ arreter_picom() {
 
 relancer_panneau() {
     sleep 1.5  # le nouveau compositeur est en place avant que le panneau se recrée
-    # Sans panneau lancé, « xfce4-panel -r » attend sans fin : rien à relancer dans ce cas
-    if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel -r >/dev/null 2>&1; fi
+    # Sans panneau lancé : rien à relancer (« xfce4-panel --quit » attendrait sans fin).
+    # Pas de « xfce4-panel -r » : sans gestionnaire de session pour relancer le panneau, il
+    # l'arrête sans le faire revenir. On l'arrête puis on le redémarre, comme bureau-wm.
+    pgrep -u "$(id -u)" -x xfce4-panel >/dev/null || return 0
+    xfce4-panel --quit >/dev/null 2>&1
+    for _ in $(seq 30); do pgrep -u "$(id -u)" -x xfce4-panel >/dev/null || break; sleep 0.1; done
+    setsid -f xfce4-panel >/dev/null 2>&1
 }
 
 case "${1:-}" in
