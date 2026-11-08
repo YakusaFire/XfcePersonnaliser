@@ -16,6 +16,9 @@ fond-anime \- fond d'écran animé à partir d'une vidéo, pour le bureau Xfce
 .br
 .B fond-anime pause\-auto
 .RB { on | off }
+.br
+.B fond-anime rotation
+{\fIminutes\fP [\fIhasard\fP]|\fBespace\fP|\fBoff\fP}
 .SH DESCRIPTION
 .B fond-anime
 lance une vidéo en fond d'écran avec
@@ -33,6 +36,15 @@ puis remis à l'arrêt.
 Sinon (Compiz, picom en xrender faute d'accélération 3D, picom arrêté), la vidéo se pose sur
 le bureau dans une fenêtre de type bureau, et les icônes sont réaffichées par-dessus, sans
 pouvoir être déplacées.
+.PP
+Avec plusieurs écrans, chacun a sa vidéo, à sa taille, mise en pause pour lui seul. Quand un
+écran est branché ou débranché, le fond animé se relance tout seul en quelques secondes.
+.PP
+Le lecteur reçoit toutes les vidéos de la galerie de
+.BR bureau-reglages (1),
+en commençant par la vidéo choisie : chacune tourne en boucle, et
+.B fond-anime rotation
+règle quand passer à une autre.
 .SH COMMANDES
 .TP
 .I vidéo
@@ -50,7 +62,24 @@ Active ou désactive le lancement à l'ouverture de session.
 .TP
 .BR "pause\-auto on" | off
 Met la vidéo en pause tant qu'elle ne se voit pas : fenêtre en plein écran ou agrandie, écran
-éteint, session verrouillée ou passage sur une autre console. Activé par défaut.
+éteint, session verrouillée ou passage sur une autre console. Avec plusieurs écrans, une
+fenêtre ne compte que si elle couvre au moins 60 % de l'écran de la vidéo. Activé par défaut.
+.TP
+.BI "rotation " minutes " \fR[\fPhasard\fR]\fP"
+Passe à la vidéo suivante de la galerie (ou à une autre, au hasard, avec
+.BR hasard )
+après tant de minutes de bureau visible : le temps ne compte pas pendant la pause. La vidéo
+affichée devient celle que
+.B fond-anime
+relance.
+.TP
+.B rotation espace
+Une vidéo par espace de travail, dans l'ordre de la galerie, en partant de la vidéo choisie
+sur l'espace où elle l'a été. Avec Compiz, les espaces de travail ne forment qu'un grand
+bureau : la vidéo ne change pas.
+.TP
+.B rotation off
+Garde la même vidéo (par défaut).
 .TP
 .BR \-h ", " \-\-help
 Affiche l'aide.
@@ -62,6 +91,15 @@ Dernière vidéo lancée.
 .I ~/.config/fond-anime/pause-auto
 .B off
 pour couper la pause automatique ; relu chaque seconde.
+.TP
+.I ~/.config/fond-anime/rotation
+Changement de vidéo :
+.BR off ,
+.RI « minutes " ordre" »,
+.RI « minutes " hasard" »
+ou
+.BR espace ;
+relu chaque seconde.
 .TP
 .I ~/.config/fond-anime/fond-xfdesktop.json
 Vrai fond d'écran, gardé pendant que la vidéo tourne sous le bureau.
@@ -81,7 +119,10 @@ arrêtée par
 .BR "fond-anime stop" .
 .TP
 .I $XDG_RUNTIME_DIR/fond-anime-mpv.sock
-Prise de commande de mpv, utilisée par la pause automatique.
+Prise de commande de mpv, utilisée par la pause automatique et le changement de vidéo ;
+.IR fond-anime-mpv-1.sock ,
+.IR -2 …
+pour les écrans suivants.
 .SH ENVIRONNEMENT
 .TP
 .B XDG_CONFIG_HOME
@@ -96,6 +137,8 @@ démarrer (mpv absent…).
 fond-anime ~/Vidéos/plage.mp4
 fond-anime auto on
 fond-anime pause-auto off
+fond-anime rotation 30
+fond-anime rotation 10 hasard
 fond-anime stop
 .fi
 .SH "VOIR AUSSI"

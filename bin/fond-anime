@@ -11,12 +11,18 @@
 #   fond-anime pause-auto on|off  met la vidéo en pause tant qu'elle ne se voit pas
 #                            (fenêtre en plein écran ou agrandie, écran éteint, session
 #                            verrouillée) ; activé par défaut
+#   fond-anime rotation MINUTES [hasard]  passe à la vidéo suivante de la galerie (ou à une
+#                            autre, au hasard) après MINUTES minutes de bureau visible
+#   fond-anime rotation espace   une vidéo par espace de travail, dans l'ordre de la galerie
+#   fond-anime rotation off  garde la même vidéo (par défaut)
 #
 # Avec picom en glx, la vidéo passe sous le vrai bureau (xfdesktop) dont picom rend le fond
 # transparent : les icônes restent celles d'XFCE (déplacer, supprimer, créer…).
 # Sinon (Compiz, picom en xrender faute d'accélération 3D, picom arrêté), la vidéo se pose sur le
 # bureau dans une fenêtre de type bureau, et fond-anime-icones réaffiche les icônes par-dessus,
 # sans pouvoir les déplacer.
+# Plusieurs écrans : une vidéo par écran, chacune à la taille du sien et mise en pause pour lui
+# seul ; le fond animé se relance tout seul quand un écran est branché ou débranché.
 
 set -u
 ICI="$(dirname "$(realpath "$0")")"
@@ -30,9 +36,14 @@ AUTOSTART="$CONF/autostart/fond-anime.desktop"
 NETTOYAGE="$CONF/autostart/fond-anime-nettoyage.desktop"
 PICOM_CONF="$CONF/picom/picom.conf"
 SHADER=fond-anime.glsl
-# Prise de commande de mpv : fond-anime-video s'en sert pour la pause automatique
-PRISE="${XDG_RUNTIME_DIR:-$CONF_DIR}/fond-anime-mpv.sock"
+# Prise de commande de mpv : fond-anime-video s'en sert pour la pause automatique et le
+# changement de vidéo. Premier écran : fond-anime-mpv.sock (lue aussi par l'interface), les
+# suivants : fond-anime-mpv-1.sock, -2…
+PRISE_BASE="${XDG_RUNTIME_DIR:-$CONF_DIR}/fond-anime-mpv"
+PRISE="$PRISE_BASE.sock"
 PAUSE_AUTO="$CONF_DIR/pause-auto"
+ROTATION="$CONF_DIR/rotation"  # « off », « MINUTES ordre », « MINUTES hasard » ou « espace »
+EXT_VIDEOS='mp4|webm|mkv|mov|m4v|avi|ogv|gif'  # comme la galerie de l'interface
 
 mkdir -p "$CONF_DIR"
 
@@ -54,14 +65,80 @@ chemin_commande() {
 en_cours() { pgrep -u "$(id -u)" -f "^mpv .*fond-anime-mp[v]" >/dev/null; }
 
 arreter_video() {
-    if [[ -f "$PIDFILE" ]]; then
-        kill "$(cat "$PIDFILE")" 2>/dev/null
+    local pid
+    if [[ -f "$PIDFILE" ]]; then  # une vidéo par écran : un numéro par ligne
+        while read -r pid; do [ -z "$pid" ] || kill "$pid" 2>/dev/null; done < "$PIDFILE"
         rm -f "$PIDFILE"
     fi
     # au cas où une instance aurait été lancée hors du script
     pkill -u "$(id -u)" -f "^python3 [^ ]*/fond-anime-vide[o] " 2>/dev/null
     pkill -u "$(id -u)" -f "^python3 [^ ]*/fond-anime-icone[s]" 2>/dev/null
+    rm -f "$PRISE_BASE"-[0-9]*.sock  # prises des écrans en plus (mpv ne les retire pas en partant)
     return 0
+}
+
+# Dossier des vidéos de la galerie, comme l'interface : celui du logiciel s'il est modifiable
+# (copie de git), sinon ~/.local/share/bureau-reglages/fonds-animes (logiciel dans /usr)
+dossier_videos() {
+    local logiciel; logiciel=$(dirname "$ICI")
+    if [ -d "$logiciel/fonds-animes" ]; then [ -w "$logiciel/fonds-animes" ] && { echo "$logiciel/fonds-animes"; return; }
+    elif [ -w "$logiciel" ]; then echo "$logiciel/fonds-animes"; return
+    fi
+    echo "${XDG_DATA_HOME:-$HOME/.local/share}/bureau-reglages/fonds-animes"
+}
+
+# Liste de lecture de mpv : les vidéos de la galerie, dans l'ordre où l'interface les montre
+# (noms sans tenir compte des majuscules, tri de Python : celui de sort dépend de la langue),
+# plus la vidéo choisie si elle est rangée ailleurs. Remplit LISTE, et DEPART (place de la vidéo
+# choisie).
+preparer_liste() {
+    local choisie f i
+    choisie=$(realpath "$1")
+    LISTE=() DEPART=0
+    while IFS= read -r -d '' f; do LISTE+=("$f"); done < <(python3 - "$(dossier_videos)" "$EXT_VIDEOS" <<'EOF'
+import os, sys
+dossier, extensions = sys.argv[1], tuple("." + e for e in sys.argv[2].split("|"))
+try:
+    noms = sorted(os.listdir(dossier), key=str.casefold)
+except OSError:
+    noms = []
+for nom in noms:
+    if nom.lower().endswith(extensions) and os.path.isfile(os.path.join(dossier, nom)):
+        sys.stdout.write(os.path.join(dossier, nom) + "\0")
+EOF
+)
+    for i in "${!LISTE[@]}"; do
+        if [ "$(realpath "${LISTE[$i]}")" = "$choisie" ]; then DEPART=$i; return; fi
+    done
+    LISTE=("$choisie" "${LISTE[@]}")
+}
+
+# Écrans : « LxH+X+Y » de chacun (xrandr --listmonitors), sinon l'écran entier
+ecrans() {
+    local e
+    e=$(xrandr --listmonitors 2>/dev/null |
+        sed -n 's|^ *[0-9]*: [^ ]* \([0-9]*\)/[0-9]*x\([0-9]*\)/[0-9]*\([+-][0-9]*\)\([+-][0-9]*\) .*|\1x\2\3\4|p')
+    [ -n "$e" ] || e="$(xrandr 2>/dev/null | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p')+0+0"
+    printf '%s\n' "$e"
+}
+
+# lancer_videos [--type-bureau] : une fenêtre de vidéo par écran. La première (--principal)
+# mémorise la vidéo quand elle change, met à jour la couleur du fond masqué et relance le fond
+# animé quand les écrans changent.
+lancer_videos() {
+    local g i=0 prise
+    local -a options
+    : > "$PIDFILE"
+    while read -r g; do
+        [ -n "$g" ] || continue
+        prise="$PRISE"; options=(--principal)
+        if [ "$i" -gt 0 ]; then prise="$PRISE_BASE-$i.sock"; options=(); fi
+        "$ICI/fond-anime-video" "$@" "$g" "${options[@]}" -- "${LECTEUR[@]}" --input-ipc-server="$prise" \
+            -- "${LISTE[@]}" >/dev/null 2>&1 &
+        echo $! >> "$PIDFILE"
+        disown
+        i=$((i + 1))
+    done < <(ecrans)
 }
 
 # Couleur moyenne d'une image de la vidéo, en RRGGBB : le fond masqué du bureau prend cette
@@ -165,15 +242,15 @@ start() {
     local hwdec=auto-safe
     if "$ICI/rendu-logiciel"; then hwdec=no; fi
 
-    # taille totale de l'écran (tous moniteurs confondus)
-    local geom
-    geom="$(xrandr | sed -n 's/.*current \([0-9]*\) x \([0-9]*\).*/\1x\2/p')+0+0"
-    local lecteur=(mpv -wid WID
+    # Toute la galerie dans la liste de lecture, en commençant par la vidéo choisie : chaque
+    # vidéo tourne en boucle, fond-anime-video passe à une autre selon « fond-anime rotation »
+    preparer_liste "$(cat "$SAVED")"
+    LECTEUR=(mpv -wid WID
         # Sans accélération graphique, mpv se rabattrait sur sdl, qui ignore -wid et ouvre sa
         # propre fenêtre : seulement des sorties qui s'intègrent, et le rendu logiciel accepté
         "--vo=gpu,gpu-next,x11" --gpu-sw=yes  # un seul élément : liste de sorties pour mpv
         --x11-name=fond-anime-mpv
-        --loop-file=inf
+        --loop-file=inf --loop-playlist=inf --playlist-start="$DEPART"
         --no-audio
         --panscan=1.0
         --hwdec="$hwdec"
@@ -182,26 +259,20 @@ start() {
         --cursor-autohide=no
         --stop-screensaver=no
         --profile=fast
-        --input-ipc-server="$PRISE"
-        --really-quiet
-        "$(cat "$SAVED")")
+        --really-quiet)
 
     arreter_video
     if picom_pret && preparer_picom; then
-        # fenêtre hors du gestionnaire de fenêtres, gardée tout en bas, sous xfdesktop
-        "$ICI/fond-anime-video" "$geom" -- "${lecteur[@]}" >/dev/null 2>&1 &
-        echo $! > "$PIDFILE"
-        disown
+        # fenêtres hors du gestionnaire de fenêtres, gardées tout en bas, sous xfdesktop
+        lancer_videos
         sleep 1  # la vidéo est en place sous le bureau avant que son fond devienne transparent
         masquer_fond "$(couleur_video "$(cat "$SAVED")")"
         echo "Fond animé lancé derrière les icônes du bureau : $(cat "$SAVED")"
     else
         restaurer_fond
-        # Fenêtre de type bureau, gérée par le gestionnaire de fenêtres (comme xwinwrap -fdt) :
+        # Fenêtres de type bureau, gérées par le gestionnaire de fenêtres (comme xwinwrap -fdt) :
         # au-dessus du fond de xfdesktop, sous les applications
-        "$ICI/fond-anime-video" --type-bureau "$geom" -- "${lecteur[@]}" >/dev/null 2>&1 &
-        echo $! > "$PIDFILE"
-        disown
+        lancer_videos --type-bureau
         # la vidéo cache les icônes de xfdesktop : on les réaffiche par-dessus
         (sleep 1; exec python3 "$ICI/fond-anime-icones") >/dev/null 2>&1 &
         disown
@@ -244,7 +315,20 @@ case "${1:-}" in
                     else echo "Pause automatique désactivée."; fi ;;
             *) echo "Usage : fond-anime pause-auto on|off" >&2; exit 1 ;;
         esac ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    rotation)
+        # Lu chaque seconde par fond-anime-video : pas besoin de relancer la vidéo
+        case "${2:-}:${3:-}" in
+            off:) echo off > "$ROTATION"; echo "Changement de vidéo désactivé." ;;
+            espace:) echo espace > "$ROTATION"; echo "Une vidéo par espace de travail." ;;
+            [1-9]*:|[1-9]*:ordre|[1-9]*:hasard)
+                if [[ ! $2 =~ ^[0-9]+$ ]]; then echo "Nombre de minutes invalide : $2" >&2; exit 1; fi
+                echo "$2 ${3:-ordre}" > "$ROTATION"
+                quand="toutes les $2 minutes"; [ "$2" != 1 ] || quand="chaque minute"
+                if [ "${3:-ordre}" = hasard ]; then echo "Autre vidéo au hasard $quand."
+                else echo "Vidéo suivante $quand."; fi ;;
+            *) echo "Usage : fond-anime rotation MINUTES [hasard] | espace | off" >&2; exit 1 ;;
+        esac ;;
+    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' ;;
     "")
         if [[ -f "$SAVED" ]]; then start "$(cat "$SAVED")"
         else echo "Aucune vidéo mémorisée. Usage : fond-anime VIDEO.mp4" >&2; exit 1; fi ;;

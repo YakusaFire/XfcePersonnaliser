@@ -42,6 +42,10 @@ ALTTAB_CSS = os.path.join(CONFIG, "gtk-3.0", "gtk.css")
 ALTTAB_OFF = ALTTAB_CSS + ".desactive"
 VIDEO_ANIMEE = os.path.join(CONFIG, "fond-anime", "video")
 PAUSE_AUTO = os.path.join(CONFIG, "fond-anime", "pause-auto")  # « off » : pas de pause automatique
+ROTATION = os.path.join(CONFIG, "fond-anime", "rotation")  # changement de vidéo (fond-anime rotation)
+CHOIX_ROTATION = [("off", "Jamais"), ("5", "Toutes les 5 minutes"), ("15", "Toutes les 15 minutes"),
+                  ("30", "Toutes les 30 minutes"), ("60", "Toutes les heures"),
+                  ("espace", "À chaque espace de travail")]
 PRISE_MPV = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or os.path.join(CONFIG, "fond-anime"),
                          "fond-anime-mpv.sock")  # prise de commande du mpv du fond animé
 
@@ -421,6 +425,27 @@ def fond_principal(props):
     return props[min(cles, key=rang)] if cles else ""
 
 
+def flou_possible(conf):
+    """Le flou de picom (dual_kawase) demande glx : en xrender, picom l'ignore."""
+    return (conf.valeur("backend") or "").strip('"') != "xrender"
+
+
+def classes_ouvertes():
+    """Classes (WM_CLASS) des fenêtres ouvertes, pour les règles par application de picom."""
+    try:
+        liste = subprocess.run(["xprop", "-root", "_NET_CLIENT_LIST"], capture_output=True, text=True,
+                               timeout=5).stdout
+        classes = set()
+        for ident in re.findall(r"0x[0-9a-f]+", liste):
+            sortie = subprocess.run(["xprop", "-id", ident, "WM_CLASS"], capture_output=True, text=True,
+                                    timeout=5).stdout
+            if m := re.search(r'=\s*"[^"]*",\s*"([^"]+)"', sortie):
+                classes.add(m.group(1))
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return sorted(classes - {"Xfce4-panel", "Xfdesktop", "fond-anime-mpv", "fond-anime-icones"}, key=str.casefold)
+
+
 def proprietes_xml(chemin):
     """Propriétés d'un fichier xfconf enregistré dans un profil."""
     res = {}
@@ -517,6 +542,111 @@ class ConfigPicom:
             sortie.append(ligne)
         self.texte = "\n".join(sortie)
 
+    # --- Flou derrière les fenêtres transparentes (blur-background et bloc « blur = { … }; »)
+
+    def flou(self):
+        """(actif, force) : actif si blur-background vaut true et qu'une méthode de flou est réglée."""
+        bloc = re.search(r"^blur\s*[:=]\s*\{(.*?)\}\s*;?", self.texte, re.M | re.S)
+        methode = re.search(r'method\s*=\s*"([^"]*)"', bloc.group(1)) if bloc else None
+        force = re.search(r"strength\s*=\s*(\d+)", bloc.group(1)) if bloc else None
+        actif = self.valeur("blur-background") == "true" and bool(methode) and methode.group(1) != "none"
+        return actif, int(force.group(1)) if force else 5
+
+    def regler_flou(self, actif, force):
+        bloc = f'blur = {{ method = "dual_kawase"; strength = {max(1, min(20, int(force)))}; }};'
+        motif = re.compile(r"^blur\s*[:=]\s*\{.*?\}\s*;?", re.M | re.S)
+        self.texte = motif.sub(lambda _m: bloc, self.texte, count=1) if motif.search(self.texte) \
+            else self.texte.rstrip("\n") + "\n" + bloc + "\n"
+        self.regler("blur-background", "true" if actif else "false")
+        if actif and "blur-background = false" not in self.texte:
+            # Jamais de flou derrière le bureau (la vidéo du fond animé deviendrait floue), ni derrière
+            # les fenêtres qui dessinent leur ombre, les menus et le Alt+Tab (rectangles flous autour)
+            self.ajouter_regle_debut(
+                "  # Flou : jamais derrière le bureau et le fond animé, ni autour des fenêtres qui dessinent leur ombre\n"
+                "  { match = \"window_type = 'desktop' || class_g = 'fond-anime-mpv' || _GTK_FRAME_EXTENTS@ || "
+                "class_g = 'Xfwm4' || window_type = 'tooltip' || window_type = 'dnd' || window_type = 'popup_menu' || "
+                "window_type = 'dropdown_menu' || window_type = 'menu' || window_type = 'notification'\"; "
+                "blur-background = false; },")
+
+    def ajouter_regle_debut(self, texte):
+        self.texte = re.sub(r"^(rules\s*=\s*\(\s*)$", lambda m: m.group(1) + "\n" + texte, self.texte, count=1,
+                            flags=re.M)
+
+    # --- Règles par application, à la fin du bloc « rules = ( … ); » pour l'emporter sur les autres
+
+    DEBUT_REGLES = "  # >>> Règles par application (Personnalisation du bureau), à modifier depuis l'interface"
+    FIN_REGLES = "  # <<< Fin des règles par application"
+
+    def bloc_regles(self):
+        """(début, fin) : numéros des lignes « rules = ( » et « ); » qui le ferme, ou None."""
+        lignes = self.texte.split("\n")
+        debut = next((i for i, l in enumerate(lignes) if re.match(r"rules\s*=\s*\(", l)), None)
+        if debut is None:
+            return None
+        fin = next((i for i in range(debut + 1, len(lignes)) if re.match(r"\s*\)\s*;", lignes[i])), None)
+        return None if fin is None else (debut, fin)
+
+    def regles_appli(self):
+        """Règles par application : [{classe, opacite (%), sans_ombre, coins_droits, flou}]."""
+        lignes, regles, dedans = self.texte.split("\n"), [], False
+        for l in lignes:
+            if l.strip() == self.DEBUT_REGLES.strip():
+                dedans = True
+            elif l.strip() == self.FIN_REGLES.strip():
+                dedans = False
+            elif dedans and (m := re.search(r"class_g = '([^']+)'", l)):
+                opacite = re.search(r"opacity = ([0-9.]+)", l)
+                regles.append({"classe": m.group(1),
+                               "opacite": round(float(opacite.group(1)) * 100) if opacite else 100,
+                               "sans_ombre": "shadow = false" in l, "coins_droits": "corner-radius = 0" in l,
+                               "flou": "blur-background = true" in l})
+        return regles
+
+    @staticmethod
+    def texte_regle(r):
+        morceaux = [f"match = \"class_g = '{r['classe']}'\""]
+        if r["opacite"] < 100:
+            morceaux.append(f"opacity = {r['opacite'] / 100:.2f}")
+        if r["sans_ombre"]:
+            morceaux.append("shadow = false")
+        if r["coins_droits"]:
+            morceaux.append("corner-radius = 0")
+        if r["flou"]:
+            morceaux.append("blur-background = true")
+        return "  { " + "; ".join(morceaux) + "; }"
+
+    def regler_regles_appli(self, regles):
+        """Réécrit le bloc des règles par application ; False sans bloc « rules = ( … ); »."""
+        bornes = self.bloc_regles()
+        if not bornes:
+            return False
+        lignes = self.texte.split("\n")
+        debut, fin = bornes
+        corps = lignes[debut + 1:fin]
+        # Ancien bloc retiré (repères compris), le nouveau mis juste avant la parenthèse fermante
+        if self.DEBUT_REGLES.strip() in (l.strip() for l in corps):
+            i = next(i for i, l in enumerate(corps) if l.strip() == self.DEBUT_REGLES.strip())
+            j = next((k for k in range(i, len(corps)) if corps[k].strip() == self.FIN_REGLES.strip()), len(corps) - 1)
+            del corps[i:j + 1]
+        if regles:
+            corps += [self.DEBUT_REGLES, *(self.texte_regle(r) for r in regles), self.FIN_REGLES]
+        lignes[debut + 1:fin] = self.virgules(corps)
+        self.texte = "\n".join(lignes)
+        # Le flou d'une seule application demande quand même une méthode de flou
+        if any(r["flou"] for r in regles) and not re.search(r"^blur\s*[:=]\s*\{", self.texte, re.M):
+            self.texte = self.texte.rstrip("\n") + '\nblur = { method = "dual_kawase"; strength = 5; };\n'
+        return True
+
+    @staticmethod
+    def virgules(corps):
+        """Une virgule après chaque élément de la liste, sauf le dernier (libconfig)."""
+        fins = [i for i, l in enumerate(corps)
+                if not l.strip().startswith("#") and l.rstrip().rstrip(",").endswith("}")]
+        for n, i in enumerate(fins):
+            nue = corps[i].rstrip().rstrip(",")
+            corps[i] = nue if n == len(fins) - 1 else nue + ","
+        return corps
+
     def enregistrer(self):
         ecrire(PICOM_CONF, self.texte)
 
@@ -549,6 +679,7 @@ class Etat:
         self.fond_anime_bureau = processus("-f", "^python3 [^ ]*/fond-anime-vide[o] [0-9]")
         self.fond_anime_auto = autostart_actif("fond-anime", False)
         self.pause_auto = lire(PAUSE_AUTO).strip() != "off"
+        self.rotation = lire(ROTATION).split() or ["off"]
         self.video_en_pause = self.fond_anime and video_en_pause()
         self.video = lire(VIDEO_ANIMEE).strip()
         self.videos = videos_disponibles()
@@ -739,6 +870,7 @@ class Fenetre(Gtk.ApplicationWindow):
         self.chemins_galerie = {}
         self.a_charger = []
         self.sig_videos = None
+        self.sig_regles = None
         self.chemins_videos = {}
         self.infos_videos = {}
         self.pngs_videos = {}
@@ -1259,13 +1391,23 @@ class Fenetre(Gtk.ApplicationWindow):
             "Réglage de la pause automatique…", ["fond-anime", "pause-auto", "on" if actif else "off"],
             fini="Pause automatique activée" if actif else "Pause automatique désactivée"))
         self.ligne_anime = ligne("Fond animé", "", self.switch_anime)
+        # Changement de vidéo : combien de temps, ou à chaque espace de travail ; au hasard ou dans l'ordre
+        self.combo_rotation = Gtk.ComboBoxText()
+        for ident, texte in CHOIX_ROTATION:
+            self.combo_rotation.append(ident, texte)
+        self.combo_rotation.connect("changed", lambda _c: None if self.maj else self.regler_rotation())
+        self.hasard = Gtk.CheckButton(label="Au hasard")
+        self.hasard.connect("toggled", lambda _c: None if self.maj else self.regler_rotation())
+        self.ligne_rotation = ligne("Changer de vidéo", "", self.hasard, self.combo_rotation)
         self.carte(b, self.ligne_anime,
                    ligne("Lancer à l'ouverture de session", None, self.switch_anime_auto),
                    ligne("Pause automatique",
                          "La vidéo s'arrête quand une fenêtre est en plein écran ou agrandie, quand l'écran "
                          "s'éteint ou que la session est verrouillée, et reprend dès que le bureau se revoit. "
+                         "Avec plusieurs écrans, chacun a sa vidéo, mise en pause pour lui seul. "
                          "Économise le processeur, la carte graphique et la batterie.",
-                         self.switch_pause_auto))
+                         self.switch_pause_auto),
+                   self.ligne_rotation)
 
         # Aperçu de la vidéo choisie dans la liste
         self.apercu = Apercu(384, 216)
@@ -1344,7 +1486,27 @@ class Fenetre(Gtk.ApplicationWindow):
         possible = e.fond_anime or not e.raison_fond_anime()
         self.switch_anime.set_sensitive(possible)
         self.switch_anime_auto.set_sensitive(possible or e.fond_anime_auto)
+        self.maj_rotation(e)
         self.remplir_videos(e)
+
+    def maj_rotation(self, e):
+        reglage = e.rotation[0] if e.rotation[0] in ("off", "espace") or e.rotation[0].isdigit() else "off"
+        if not self.combo_rotation.set_active_id(reglage):  # durée réglée par la commande (ex. 10 minutes)
+            self.combo_rotation.append(reglage, f"Toutes les {reglage} minutes")
+            self.combo_rotation.set_active_id(reglage)
+        self.hasard.set_active(e.rotation[1:2] == ["hasard"])
+        self.hasard.set_sensitive(reglage.isdigit())
+        nombre = len(set(e.videos) | ({e.video} if e.video and os.path.isfile(e.video) else set()))
+        self.ligne_rotation.set_sensitive(nombre >= 2 or reglage != "off")
+        self.ligne_rotation.desc.set_text(
+            "Il faut au moins deux vidéos dans la galerie ci-dessous." if nombre < 2 else
+            "Parmi les vidéos de la galerie, en partant de celle du fond animé. Le temps ne compte que "
+            "quand le bureau se voit ; à chaque espace de travail, chacun garde la sienne.")
+
+    def regler_rotation(self):
+        choix = self.combo_rotation.get_active_id() or "off"
+        args = [choix] if not choix.isdigit() else [choix] + (["hasard"] if self.hasard.get_active() else [])
+        self.lancer("Réglage du changement de vidéo…", ["fond-anime", "rotation", *args])
 
     def remplir_videos(self, e):
         videos = list(e.videos)
@@ -1557,16 +1719,33 @@ class Fenetre(Gtk.ApplicationWindow):
                 lambda c: c.regler("corner-radius", w.get_value_as_int()),
                 f"Arrondi des coins : {w.get_value_as_int()} px")))
         self.switch_alttab = self.interrupteur(self.regler_alttab)
+        self.switch_flou = self.interrupteur(lambda actif: self.modifier_picom(
+            lambda c: c.regler_flou(actif, self.force_flou.get_value_as_int()),
+            "Flou activé" if actif else "Flou désactivé"))
+        self.force_flou = Gtk.SpinButton.new_with_range(1, 20, 1)
+        self.force_flou.set_tooltip_text("Force du flou, de 1 à 20")
+        self.force_flou.connect("value-changed", lambda w: None if self.maj else self.plus_tard(
+            "flou", 600, lambda: self.modifier_picom(
+                lambda c: c.regler_flou(c.flou()[0], w.get_value_as_int()), f"Force du flou : {w.get_value_as_int()}")))
 
         self.ligne_animations = ligne("Animations", "Glissement vers le dock à la réduction, zoom à l'ouverture "
                                                     "et à la fermeture.", self.switch_animations)
         self.ligne_ombres = ligne("Ombres des fenêtres", None, self.switch_ombres)
         self.ligne_fondu = ligne("Fondu des menus et bulles", None, self.switch_fondu)
         self.ligne_arrondi = ligne("Arrondi des coins", "En pixels, 0 pour des coins droits.", self.arrondi)
+        self.ligne_flou = ligne("Flou derrière les fenêtres transparentes", "", self.force_flou, self.switch_flou)
         self.ligne_alttab = ligne("Alt+Tab stylisé", "", self.switch_alttab)
         self.ligne_picom = ligne("Picom", "", self.switch_picom)
         self.carte_effets = self.carte(
-            b, self.ligne_picom, self.ligne_animations, self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi, self.ligne_alttab)
+            b, self.ligne_picom, self.ligne_animations, self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi,
+            self.ligne_flou, self.ligne_alttab)
+
+        self.section(b, "Par application", "Transparence, ombre, coins et flou d'une application précise, avec picom.")
+        self.liste_regles = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.ligne_ajout_regle = ligne("Ajouter une application",
+                                       "Choisis-la parmi les fenêtres ouvertes, ou clique sur l'une des siennes.",
+                                       bouton("Ajouter…", lambda: self.editer_regle(None)))
+        self.carte_regles = self.carte(b, self.liste_regles, self.ligne_ajout_regle)
 
         self.section(b, "Compiz", "Avec Compiz uniquement.")
         self.ligne_ccsm = ligne("Réglages avancés", "", bouton("Ouvrir", lambda: self.detacher("ccsm")))
@@ -1622,11 +1801,136 @@ class Fenetre(Gtk.ApplicationWindow):
         self.ligne_animations.set_sensitive(e.picom_actif and conf.animations() is not None)
         for l in (self.ligne_ombres, self.ligne_fondu, self.ligne_arrondi):
             l.set_sensitive(e.picom_actif and bool(conf.texte))
+        flou, force = conf.flou()
+        self.switch_flou.set_active(flou)
+        self.force_flou.set_value(force)
+        glx = flou_possible(conf)
+        self.ligne_flou.set_sensitive(e.picom_actif and bool(conf.texte) and glx)
+        self.ligne_flou.desc.set_text(
+            "Effet verre dépoli derrière les fenêtres et panneaux en partie transparents, jamais derrière le "
+            "bureau ni le fond animé. Force de 1 à 20 ; demande un peu plus à la carte graphique." if glx else
+            "Indisponible : picom est en xrender, faute d'accélération 3D, et le flou demande glx.")
+        self.carte_regles.set_sensitive(e.picom_actif and conf.bloc_regles() is not None)
+        self.remplir_regles(conf.regles_appli(), glx)
         self.switch_alttab.set_active(e.alttab)
         self.ligne_alttab.desc.set_text(
             f"Sélecteur de fenêtres aux couleurs du profil ({abrege(ALTTAB_CSS)})." if e.alttab_dispo else
             f"Ton {abrege(ALTTAB_CSS)} a déjà son propre style : celui du projet n'y est pas mis.")
         self.ligne_alttab.set_sensitive(e.alttab_dispo)
+
+    def remplir_regles(self, regles, glx):
+        signature = repr((regles, glx))
+        if signature == self.sig_regles:
+            return
+        self.sig_regles = signature
+        for enfant in self.liste_regles.get_children():
+            enfant.destroy()
+        if not regles:
+            self.liste_regles.pack_start(ligne("Aucune règle pour l'instant",
+                                               "Les applications suivent les réglages ci-dessus."), False, False, 0)
+        for i, r in enumerate(regles):
+            if i:
+                self.liste_regles.pack_start(Gtk.Separator(), False, False, 0)
+            details = [f"opacité {r['opacite']} %"] if r["opacite"] < 100 else []
+            details += [texte for cle, texte in (("sans_ombre", "sans ombre"), ("coins_droits", "coins droits"),
+                                                 ("flou", "flou derrière" if glx else "flou (demande glx)")) if r[cle]]
+            corbeille = Gtk.Button.new_from_icon_name("user-trash-symbolic", Gtk.IconSize.BUTTON)
+            corbeille.set_tooltip_text("Retirer cette règle")
+            corbeille.connect("clicked", lambda _b, r=r: self.retirer_regle(r))
+            self.liste_regles.pack_start(
+                ligne(r["classe"], " · ".join(details) or "Comme les autres fenêtres",
+                      bouton("Modifier…", lambda r=r: self.editer_regle(r)), corbeille), False, False, 0)
+        self.liste_regles.show_all()
+
+    def editer_regle(self, regle):
+        """Ajout (regle = None) ou modification d'une règle par application, puis relance de picom."""
+        if ConfigPicom().bloc_regles() is None:
+            self.erreur("Règles de picom introuvables",
+                        f"{abrege(PICOM_CONF)} n'a pas de bloc « rules = ( … ); » (picom 12).")
+            return
+        d = Gtk.Dialog(title="Règle par application", transient_for=self, modal=True)
+        d.add_buttons("Annuler", Gtk.ResponseType.CANCEL, "Enregistrer", Gtk.ResponseType.OK)
+        d.set_default_response(Gtk.ResponseType.OK)
+        zone = d.get_content_area()
+        zone.set_spacing(8)
+        for cote in ("start", "end", "top", "bottom"):
+            getattr(zone, f"set_margin_{cote}")(18)
+        classes = Gtk.ComboBoxText.new_with_entry()
+        for c in classes_ouvertes():
+            classes.append_text(c)
+        entree = classes.get_child()
+        entree.set_placeholder_text("classe de ses fenêtres, ex. Firefox")
+        entree.set_activates_default(True)
+        if regle:
+            entree.set_text(regle["classe"])
+        cliquer = Gtk.Button(label="Cliquer sur une fenêtre…")
+        cliquer.connect("clicked", lambda _b: self.classe_par_clic(d, entree, cliquer))
+        haut = Gtk.Box(spacing=8)
+        haut.pack_start(classes, True, True, 0)
+        haut.pack_start(cliquer, False, False, 0)
+        opacite = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 30, 100, 5)
+        opacite.set_value(regle["opacite"] if regle else 100)
+        opacite.connect("format-value", lambda _s, v: f"{int(v)} %")
+        cases = {cle: Gtk.CheckButton(label=texte) for cle, texte in (
+            ("sans_ombre", "Sans ombre"), ("coins_droits", "Coins droits"),
+            ("flou", "Flou derrière la fenêtre (quand elle est transparente)"))}
+        for cle, case in cases.items():
+            case.set_active(bool(regle and regle[cle]))
+        if not flou_possible(ConfigPicom()):
+            cases["flou"].set_sensitive(False)
+            cases["flou"].set_tooltip_text("Le flou demande picom en glx (accélération 3D).")
+        for w in (etiquette("<b>Application</b>", markup=True), haut,
+                  etiquette("<b>Opacité</b>", markup=True), opacite, *cases.values()):
+            zone.pack_start(w, False, False, 0)
+        d.show_all()
+        while True:
+            if d.run() != Gtk.ResponseType.OK:
+                d.destroy()
+                return
+            classe = entree.get_text().strip()
+            if re.fullmatch(r"[^'\"\\\n]+", classe):
+                break
+            self.erreur("Application à choisir", "Choisis-la dans la liste, ou clique sur une de ses fenêtres.")
+        nouvelle = {"classe": classe, "opacite": int(opacite.get_value()),
+                    **{cle: case.get_active() for cle, case in cases.items()}}
+        d.destroy()
+        regles = self.etat.picom.regles_appli()
+        ancienne = regle["classe"] if regle else classe
+        place = next((i for i, r in enumerate(regles) if r["classe"] == ancienne), len(regles))
+        regles = [r for r in regles if r["classe"] not in (ancienne, classe)]
+        regles.insert(min(place, len(regles)), nouvelle)
+        self.modifier_picom(lambda c: c.regler_regles_appli(regles), f"Règle de {classe} enregistrée")
+
+    def classe_par_clic(self, dialogue, entree, bouton_clic):
+        """xprop attend un clic sur une fenêtre et donne sa classe (WM_CLASS)."""
+        try:
+            proc = Gio.Subprocess.new(["xprop", "WM_CLASS"],
+                                      Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE)
+        except GLib.Error as err:
+            self.erreur("Impossible de lancer xprop", err.message)
+            return
+        dialogue.connect("destroy", lambda _d: proc.force_exit())  # fenêtre fermée avant le clic
+        bouton_clic.set_sensitive(False)
+        bouton_clic.set_label("Clique sur la fenêtre…")
+
+        def fini(p, resultat):
+            try:
+                _, sortie, _ = p.communicate_utf8_finish(resultat)
+            except GLib.Error:
+                return
+            m = re.search(r'=\s*"[^"]*",\s*"([^"]+)"', sortie or "")
+            if m:
+                entree.set_text(m.group(1))
+            bouton_clic.set_sensitive(True)
+            bouton_clic.set_label("Cliquer sur une fenêtre…")
+        proc.communicate_utf8_async(None, None, fini)
+
+    def retirer_regle(self, regle):
+        if not self.confirmer(f"Retirer la règle de « {regle['classe']} » ?",
+                              "Ses fenêtres reprendront les réglages communs.", "Retirer"):
+            return
+        regles = [r for r in self.etat.picom.regles_appli() if r["classe"] != regle["classe"]]
+        self.modifier_picom(lambda c: c.regler_regles_appli(regles), f"Règle de {regle['classe']} retirée")
 
     def regler_picom(self, actif):
         autostart_regler("picom", actif)

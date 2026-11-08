@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 # fond-anime-video : fenêtre de la vidéo du fond animé. Comme xwinwrap, elle lance le lecteur en
 # remplaçant WID par l'identifiant de la fenêtre, et se ferme quand le lecteur s'arrête :
-#   fond-anime-video LxH+X+Y -- mpv -wid WID … VIDEO
-#   fond-anime-video --type-bureau LxH+X+Y -- mpv -wid WID … VIDEO
+#   fond-anime-video [--type-bureau] LxH+X+Y [--principal] -- mpv -wid WID … -- VIDÉOS…
+# fond-anime en lance une par écran, à la taille de l'écran ; la première (--principal) mémorise
+# la vidéo quand elle change, met à jour la couleur du fond masqué et relance le fond animé
+# (fond-anime actualiser) quand les écrans changent.
 # Sans option (picom en glx) : fenêtre hors du gestionnaire de fenêtres (override-redirect), gardée
 # tout en bas de l'écran, sous le bureau xfdesktop dont picom rend le fond transparent
 # (xwinwrap -ov, lui, se glisse dans la fenêtre du bureau et cache les icônes).
@@ -12,13 +14,18 @@
 # et du pager. Elle cache les icônes de xfdesktop : fond-anime-icones les réaffiche par-dessus, et
 # la vidéo est gardée entre les deux.
 # Pause automatique (si mpv a --input-ipc-server=PRISE), dans les deux cas : la vidéo s'arrête tant
-# qu'elle ne se voit pas — fenêtre en plein écran ou agrandie sur l'espace de travail courant, écran
-# éteint, session verrouillée — et reprend ensuite ; désactivée si ~/.config/fond-anime/pause-auto
-# contient « off » (fond-anime pause-auto off).
+# qu'elle ne se voit pas — fenêtre en plein écran ou agrandie sur son écran et l'espace de travail
+# courant, écran éteint, session verrouillée — et reprend ensuite ; désactivée si
+# ~/.config/fond-anime/pause-auto contient « off » (fond-anime pause-auto off).
+# Changement de vidéo (fond-anime rotation, lu à chaque passage) : mpv a toute la galerie dans sa
+# liste de lecture ; la vidéo change après N minutes de bureau visible (la suivante, ou une autre
+# au hasard), ou avec l'espace de travail (« espace » : chaque espace a la sienne, dans l'ordre de
+# la galerie, en partant de la vidéo choisie sur l'espace où elle l'a été).
 
 import ctypes
 import json
 import os
+import random
 import re
 import shutil
 import signal
@@ -89,6 +96,9 @@ except OSError:
 # ~/.config, ou $XDG_CONFIG_HOME s'il est défini (comme fond-anime)
 CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 REGLAGE_PAUSE = os.path.join(CONFIG, "fond-anime", "pause-auto")
+REGLAGE_ROTATION = os.path.join(CONFIG, "fond-anime", "rotation")
+VIDEO_MEMORISEE = os.path.join(CONFIG, "fond-anime", "video")  # relancée par « fond-anime » seul
+ICI = os.path.dirname(os.path.realpath(__file__))
 ATOMES = ("_NET_CURRENT_DESKTOP", "_NET_CLIENT_LIST", "_NET_CLIENT_LIST_STACKING", "_NET_WM_DESKTOP",
           "_NET_WM_STATE", "_NET_WM_STATE_FULLSCREEN", "_NET_WM_STATE_MAXIMIZED_VERT",
           "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_STATE_HIDDEN", "_NET_WM_STATE_BELOW", "_NET_WM_STATE_STICKY",
@@ -104,14 +114,22 @@ x11.XSetErrorHandler(ctypes.cast(GESTIONNAIRE, c_void_p))
 AVEC_PARENT = ["setpriv", "--pdeathsig", "TERM"] if shutil.which("setpriv") else []
 
 
-def tout_en_bas(dpy, racine, fenetre):
+def tout_en_bas(dpy, racine, fenetre, atomes):
+    """Rien que des vidéos du fond animé sous la fenêtre (une par écran) : sans cette exception,
+    chacune s'abaisserait à son tour sous les autres, chaque seconde."""
     racine_, parent, n = c_ulong(), c_ulong(), c_uint()
     liste = POINTER(c_ulong)()
     if not x11.XQueryTree(dpy, racine, byref(racine_), byref(parent), byref(liste), byref(n)):
         return True
-    bas = liste[0] if n.value else fenetre
+    resultat = True
+    for i in range(n.value):  # de bas en haut
+        if liste[i] == fenetre:
+            break
+        if b"fond-anime-mpv" not in propriete(dpy, liste[i], atomes["WM_CLASS"], texte=True):
+            resultat = False
+            break
     x11.XFree(liste)
-    return bas == fenetre
+    return resultat
 
 
 def propriete(dpy, fenetre, atome, texte=False):
@@ -145,11 +163,12 @@ def geometrie(dpy, racine, fenetre):
     return x.value, y.value, larg.value, haut.value
 
 
-def bureau_cache(dpy, racine, atomes):
-    """Une fenêtre non réduite, en plein écran ou agrandie, sur l'espace de travail courant."""
+def bureau_cache(dpy, racine, atomes, zone):
+    """Une fenêtre non réduite, en plein écran ou agrandie, sur l'espace de travail courant, qui
+    couvre au moins 60 % de la zone de la vidéo (son écran : x, y, largeur, hauteur)."""
     courant = (propriete(dpy, racine, atomes["_NET_CURRENT_DESKTOP"]) or [0])[0]
     agrandie = {atomes["_NET_WM_STATE_MAXIMIZED_VERT"], atomes["_NET_WM_STATE_MAXIMIZED_HORZ"]}
-    ecran = None
+    x, y, largeur, hauteur = zone
     for client in propriete(dpy, racine, atomes["_NET_CLIENT_LIST"]):
         bureau = (propriete(dpy, client, atomes["_NET_WM_DESKTOP"]) or [courant])[0]
         etats = set(propriete(dpy, client, atomes["_NET_WM_STATE"]))
@@ -157,11 +176,16 @@ def bureau_cache(dpy, racine, atomes):
                 and (atomes["_NET_WM_STATE_FULLSCREEN"] in etats or agrandie <= etats)):
             continue
         # Avec Compiz, les espaces de travail sont les parties d'un seul grand bureau (extension
-        # « wall ») : une fenêtre agrandie sur une autre partie est hors de l'écran
-        ecran = ecran or geometrie(dpy, racine, racine)
+        # « wall ») : une fenêtre agrandie sur une autre partie est hors de l'écran. Avec plusieurs
+        # écrans, une fenêtre agrandie sur un autre écran ne cache pas cette vidéo, une fenêtre en
+        # plein écran étalée sur tous les cache toutes. Une fenêtre agrandie laisse voir le
+        # panneau et le dock : elle couvre un peu moins que tout l'écran.
         g = geometrie(dpy, racine, client)
-        if g and ecran and 0 <= g[0] + g[2] // 2 < ecran[2] and 0 <= g[1] + g[3] // 2 < ecran[3]:
-            return True
+        if g:
+            couvert_x = min(g[0] + g[2], x + largeur) - max(g[0], x)
+            couvert_y = min(g[1] + g[3], y + hauteur) - max(g[1], y)
+            if couvert_x > 0 and couvert_y > 0 and couvert_x * couvert_y >= 0.6 * largeur * hauteur:
+                return True
     return False
 
 
@@ -187,6 +211,108 @@ def pause_auto():
             return f.read().strip() != "off"
     except OSError:
         return True
+
+
+def rotation():
+    """Réglage du changement de vidéo : (« temps », secondes, au hasard), (« espace », 0, False) ou None."""
+    try:
+        with open(REGLAGE_ROTATION) as f:
+            mots = f.read().split()
+    except OSError:
+        return None
+    if mots[:1] == ["espace"]:
+        return ("espace", 0, False)
+    if mots and mots[0].isdigit() and int(mots[0]) > 0:
+        return ("temps", int(mots[0]) * 60, mots[1:2] == ["hasard"])
+    return None
+
+
+def couleur_moyenne(video):
+    """Couleur moyenne d'une image de la vidéo, en RRGGBB, comme fond-anime (None sans ffmpeg)."""
+    for debut in ("1", "0"):
+        try:
+            image = subprocess.run(["ffmpeg", "-v", "error", "-ss", debut, "-i", video, "-frames:v", "1",
+                                    "-vf", "scale=1:1:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                                   capture_output=True, timeout=30).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if len(image) == 3:
+            return image.hex()
+    return None
+
+
+def memoriser(video):
+    """La vidéo affichée devient celle que « fond-anime » relance (et que l'interface montre)."""
+    try:
+        with open(VIDEO_MEMORISEE + ".tmp", "w") as f:
+            f.write(video + "\n")
+        os.replace(VIDEO_MEMORISEE + ".tmp", VIDEO_MEMORISEE)
+    except OSError:
+        pass
+
+
+class Rotation:
+    """Change la vidéo de mpv dans sa liste de lecture, selon le réglage du changement de vidéo."""
+
+    def __init__(self, prise, principal, sous_bureau):
+        self.prise, self.principal, self.sous_bureau = prise, principal, sous_bureau
+        self.visible = 0.0  # secondes de bureau visible depuis le dernier changement
+        self.ecart = None   # « espace » : place dans la liste = espace de travail + écart
+        self.couleurs = {}
+
+    def mpv(self, *commande):
+        return (commande_mpv(self.prise, *commande) or {}).get("data")
+
+    def passage(self, reglage, cachee, espace, duree):
+        if reglage is None or reglage[0] != "temps":
+            self.visible = 0.0
+        if reglage is None or reglage[0] != "espace":
+            self.ecart = None
+        if reglage is None or cachee:  # le temps ne compte que quand la vidéo se voit
+            return
+        if reglage[0] == "temps":
+            self.visible += duree
+            if self.visible < reglage[1]:
+                return
+            self.visible = 0.0
+        n, place = self.mpv("get_property", "playlist-count"), self.mpv("get_property", "playlist-pos")
+        if not isinstance(n, int) or not isinstance(place, int) or n < 2 or place < 0:
+            return
+        if reglage[0] == "temps":
+            suivante = random.choice([i for i in range(n) if i != place]) if reglage[2] else (place + 1) % n
+        else:
+            if self.ecart is None:  # la vidéo du moment reste sur l'espace de travail du moment
+                self.ecart = place - espace
+            suivante = (espace + self.ecart) % n
+            if suivante == place:
+                return
+        self.changer(suivante)
+
+    def changer(self, place):
+        video = self.mpv("get_property", f"playlist/{place}/filename")
+        couleur = None
+        if self.principal and self.sous_bureau and video:
+            # Couleur du fond masqué de la nouvelle vidéo, calculée avant de la montrer
+            if video not in self.couleurs:
+                self.couleurs[video] = couleur_moyenne(video)
+            couleur = self.couleurs[video]
+        commande_mpv(self.prise, "playlist-play-index", place)
+        if self.principal and video:
+            memoriser(video)
+            if couleur:  # sans couleur (ffmpeg absent), celle de la vidéo précédente reste
+                try:
+                    subprocess.run([os.path.join(ICI, "fond-anime-fond"), "masquer", couleur], timeout=60,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+
+
+def ecrans_xrandr():
+    """Liste des écrans selon xrandr (pour voir quand un écran est branché ou débranché)."""
+    try:
+        return subprocess.run(["xrandr", "--listmonitors"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def commande_mpv(prise, *commande):
@@ -279,9 +405,12 @@ def main():
     type_bureau = bool(args) and args[0] == "--type-bureau"
     if type_bureau:
         args = args[1:]
+    principal = len(args) > 1 and args[1] == "--principal"
+    if principal:
+        args = args[:1] + args[2:]
     geometrie_voulue = re.fullmatch(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", args[0]) if args else None
     if not geometrie_voulue or len(args) < 3 or args[1] != "--":
-        sys.exit("Usage : fond-anime-video [--type-bureau] LxH+X+Y -- LECTEUR … WID …")
+        sys.exit("Usage : fond-anime-video [--type-bureau] LxH+X+Y [--principal] -- LECTEUR … WID …")
     largeur, hauteur, x, y = map(int, geometrie_voulue.groups())
 
     dpy = x11.XOpenDisplay(None)
@@ -308,20 +437,35 @@ def main():
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: lecteur.terminate())
     roles = {}  # rôle des fenêtres déjà vues, pour --type-bureau
+    changement = Rotation(prise, principal, not type_bureau) if prise else None
+    # Écrans au départ (vidéo principale) : s'ils changent deux contrôles de suite (toutes les
+    # 5 secondes), le fond animé est relancé pour s'y ajuster
+    ecrans, ecarts, tour = ecrans_xrandr() if principal else None, 0, 0
+    avant = time.monotonic()
     while lecteur.poll() is None:
         if type_bureau:
             garder_entre(dpy, racine, fenetre, atomes, roles)
-        elif not tout_en_bas(dpy, racine, fenetre):
+        elif not tout_en_bas(dpy, racine, fenetre, atomes):
             x11.XLowerWindow(dpy, fenetre)
             x11.XFlush(dpy)
         if prise:
-            cachee = pause_auto() and (bureau_cache(dpy, racine, atomes) or ecran_eteint(dpy)
-                                       or session_ailleurs())
+            cachee = pause_auto() and (bureau_cache(dpy, racine, atomes, (x, y, largeur, hauteur))
+                                       or ecran_eteint(dpy) or session_ailleurs())
             # On relit l'état réel de mpv à chaque passage : une pause demandée pendant son
             # démarrage peut se perdre, elle est alors simplement redemandée
             reponse = commande_mpv(prise, "get_property", "pause")
             if reponse and reponse.get("data") != cachee:
                 commande_mpv(prise, "set_property", "pause", cachee)
+            maintenant = time.monotonic()
+            espace = (propriete(dpy, racine, atomes["_NET_CURRENT_DESKTOP"]) or [0])[0]
+            changement.passage(rotation(), cachee, espace, maintenant - avant)
+            avant = maintenant
+        tour += 1
+        if ecrans and tour % 5 == 0:
+            ecarts = ecarts + 1 if ecrans_xrandr() not in (ecrans, None) else 0
+            if ecarts == 2:
+                subprocess.Popen([os.path.join(ICI, "fond-anime"), "actualiser"], start_new_session=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(1)
     x11.XDestroyWindow(dpy, fenetre)
     x11.XCloseDisplay(dpy)

@@ -1,8 +1,8 @@
 # XfcePersonnaliser
 
-Personnalisation du bureau XFCE (Debian 13, XFCE 4.20) : profils d'apparence complets,
-effets de fenêtres avec picom ou Compiz, écran de connexion Catppuccin, fond d'écran animé,
-et une interface graphique qui regroupe le tout.
+Personnalisation du bureau XFCE (Debian 13, XFCE 4.20) : profils d'apparence complets, à
+partager, effets de fenêtres avec picom (flou, règles par application) ou Compiz, écran de
+connexion Catppuccin, fond d'écran animé, et une interface graphique qui regroupe le tout.
 
 ![Page Profils de l'interface « Personnalisation du bureau »](captures/profils.png)
 
@@ -14,8 +14,8 @@ et une interface graphique qui regroupe le tout.
 | `bin/bureau-profil` | Enregistre ou applique un profil d'apparence complet, et l'échange avec d'autres dans une archive (thèmes et images compris) |
 | `bin/bureau-wm` | Choix du gestionnaire de fenêtres : xfwm4 + picom ou Compiz |
 | `bin/relancer-picom` | Relance picom puis le panneau (sinon la zone de survol du dock part en haut à gauche) |
-| `bin/fond-anime` | Fond d'écran animé à partir d'une vidéo (mpv) |
-| `bin/fond-anime-video` | Fenêtre de la vidéo : sous le bureau xfdesktop avec picom en glx, sinon fenêtre de type bureau posée dessus (à la place de xwinwrap) ; met la vidéo en pause quand elle ne se voit pas |
+| `bin/fond-anime` | Fond d'écran animé à partir de vidéos (mpv) : une par écran, changée au bout d'un temps ou à chaque espace de travail |
+| `bin/fond-anime-video` | Fenêtre de la vidéo : sous le bureau xfdesktop avec picom en glx, sinon fenêtre de type bureau posée dessus (à la place de xwinwrap) ; met la vidéo en pause quand elle ne se voit pas, et passe à une autre vidéo |
 | `bin/fond-anime-fond` | Masque le fond de xfdesktop (couleur rendue transparente par picom) et le remet |
 | `config/picom/fond-anime.glsl` | Shader picom qui laisse voir la vidéo derrière les icônes |
 | `config/` (autres fichiers) | Réglages de départ : `picom.conf`, style du Alt+Tab, démarrage de picom et de Compiz |
