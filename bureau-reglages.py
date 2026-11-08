@@ -34,6 +34,7 @@ ICI = os.path.dirname(os.path.realpath(__file__))
 CONFIG = GLib.get_user_config_dir()  # ~/.config, ou $XDG_CONFIG_HOME s'il est défini
 PROFILS = os.path.join(CONFIG, "bureau-profils")
 ANNULER = "_avant-load"  # état sauvegardé par bureau-profil avant chaque load
+EXT_PROFIL = ".bureau-profil.tar.gz"  # archive d'un profil à partager (bureau-profil export / import)
 MODE_WM = os.path.join(CONFIG, "bureau-wm")
 AUTOSTART = os.path.join(CONFIG, "autostart")
 PICOM_CONF = os.path.join(CONFIG, "picom", "picom.conf")
@@ -904,11 +905,15 @@ class Fenetre(Gtk.ApplicationWindow):
         self.nom_profil.connect("activate", lambda _e: self.enregistrer_profil())
         self.ligne_annuler = ligne("Annuler le dernier chargement", "",
                                    bouton("Annuler", lambda: self.charger_profil(ANNULER)))
-        self.section(b, "Enregistrer et annuler")
+        self.section(b, "Enregistrer, importer et annuler")
         self.carte(b,
                    ligne("Enregistrer l'apparence actuelle",
                          "Crée un profil avec le look du moment, ou remplace celui qui porte ce nom.",
                          self.nom_profil, bouton("Enregistrer", self.enregistrer_profil)),
+                   ligne("Importer un profil",
+                         f"Ajoute un profil reçu (archive {EXT_PROFIL}), avec ses thèmes et ses images, "
+                         "sans l'appliquer. Pour en partager un, utilise le bouton d'export de sa ligne.",
+                         bouton("Importer…", self.importer_profil)),
                    self.ligne_annuler)
 
     def ligne_profil(self, nom, p, actif):
@@ -941,10 +946,13 @@ class Fenetre(Gtk.ApplicationWindow):
 
         appliquer = bouton("Réappliquer" if actif else "Appliquer", lambda: self.charger_profil(nom),
                            None if actif else "suggested-action")
+        exporter = Gtk.Button.new_from_icon_name("document-send-symbolic", Gtk.IconSize.BUTTON)
+        exporter.set_tooltip_text("Exporter ce profil dans une archive à partager (thèmes et images compris)")
+        exporter.connect("clicked", lambda _b: self.exporter_profil(nom))
         corbeille = Gtk.Button.new_from_icon_name("user-trash-symbolic", Gtk.IconSize.BUTTON)
         corbeille.set_tooltip_text("Mettre ce profil à la corbeille")
         corbeille.connect("clicked", lambda _b: self.supprimer_profil(nom))
-        for w in (appliquer, corbeille):
+        for w in (appliquer, exporter, corbeille):
             w.set_valign(Gtk.Align.CENTER)
             b.pack_start(w, False, False, 0)
         return b
@@ -991,6 +999,45 @@ class Fenetre(Gtk.ApplicationWindow):
             return
         self.lancer(f"Enregistrement du profil « {nom} »…", ["bureau-profil", "save", nom],
                     apres=lambda: self.nom_profil.set_text(""))
+
+    def exporter_profil(self, nom):
+        chemin = self.choisir_archive_export(nom)
+        if chemin:
+            self.lancer(f"Export du profil « {nom} »…", ["bureau-profil", "export", nom, chemin], details=True)
+
+    def choisir_archive_export(self, nom):
+        """Archive où exporter le profil (dossier Documents proposé), ou None."""
+        d = Gtk.FileChooserDialog(title=f"Exporter le profil « {nom} »", transient_for=self,
+                                  action=Gtk.FileChooserAction.SAVE, do_overwrite_confirmation=True)
+        d.add_buttons("Annuler", Gtk.ResponseType.CANCEL, "Exporter", Gtk.ResponseType.ACCEPT)
+        dossier = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOCUMENTS) or HOME
+        if os.path.isdir(dossier):
+            d.set_current_folder(dossier)
+        d.set_current_name(nom + EXT_PROFIL)
+        chemin = d.get_filename() if d.run() == Gtk.ResponseType.ACCEPT else None
+        d.destroy()
+        return chemin
+
+    def importer_profil(self):
+        chemin = self.choisir_archive_import()
+        if chemin:
+            self.lancer("Import du profil…", ["bureau-profil", "import", chemin], details=True)
+
+    def choisir_archive_import(self):
+        """Archive de profil à importer (dossier Téléchargements proposé), ou None."""
+        d = Gtk.FileChooserDialog(title="Importer un profil", transient_for=self, action=Gtk.FileChooserAction.OPEN)
+        d.add_buttons("Annuler", Gtk.ResponseType.CANCEL, "Importer", Gtk.ResponseType.ACCEPT)
+        for nom_filtre, motif in ((f"Profils ({EXT_PROFIL})", "*" + EXT_PROFIL), ("Archives .tar.gz", "*.tar.gz")):
+            filtre = Gtk.FileFilter()
+            filtre.set_name(nom_filtre)
+            filtre.add_pattern(motif)
+            d.add_filter(filtre)
+        dossier = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+        if dossier and os.path.isdir(dossier):
+            d.set_current_folder(dossier)
+        chemin = d.get_filename() if d.run() == Gtk.ResponseType.ACCEPT else None
+        d.destroy()
+        return chemin
 
     def supprimer_profil(self, nom):
         if not self.confirmer(f"Mettre le profil « {nom} » à la corbeille ?",
@@ -1740,8 +1787,9 @@ class Fenetre(Gtk.ApplicationWindow):
         if self.is_active() and time.monotonic() - self.derniere_maj > 2:
             self.actualiser()
 
-    def lancer(self, message, argv, fini=None, apres=None):
-        """Exécute une commande sans figer la fenêtre, puis relit l'état du bureau."""
+    def lancer(self, message, argv, fini=None, apres=None, details=False):
+        """Exécute une commande sans figer la fenêtre, puis relit l'état du bureau. details : en cas
+        de réussite, tout ce que la commande a écrit est montré dans une fenêtre."""
         try:
             proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE)
         except GLib.Error as err:
@@ -1760,6 +1808,8 @@ class Fenetre(Gtk.ApplicationWindow):
             self.occupe(False)
             if code == 0:
                 self.statut(fini or (texte.splitlines() or ["Terminé"])[-1], "emblem-ok-symbolic")
+                if details and texte:
+                    self.information(texte.splitlines()[-1], "\n".join(texte.splitlines()[:-1]))
                 if apres:
                     apres()
             elif argv[0] == "pkexec" and code in (126, 127):
@@ -1832,6 +1882,14 @@ class Fenetre(Gtk.ApplicationWindow):
         reponse = d.run()
         d.destroy()
         return reponse == Gtk.ResponseType.OK
+
+    def information(self, titre, details=""):
+        d = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.INFO,
+                              buttons=Gtk.ButtonsType.CLOSE, text=titre)
+        if details:
+            d.format_secondary_text("\n".join(details.strip().splitlines()[-25:]))
+        d.run()
+        d.destroy()
 
     def erreur(self, titre, details=""):
         d = Gtk.MessageDialog(transient_for=self, modal=True, message_type=Gtk.MessageType.ERROR,

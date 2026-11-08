@@ -11,7 +11,7 @@ et une interface graphique qui regroupe le tout.
 | Élément | Rôle |
 |---|---|
 | `bureau-reglages.py` | Interface graphique « Personnalisation du bureau » (GTK 3) |
-| `bin/bureau-profil` | Enregistre ou applique un profil d'apparence complet |
+| `bin/bureau-profil` | Enregistre ou applique un profil d'apparence complet, et l'échange avec d'autres dans une archive (thèmes et images compris) |
 | `bin/bureau-wm` | Choix du gestionnaire de fenêtres : xfwm4 + picom ou Compiz |
 | `bin/relancer-picom` | Relance picom puis le panneau (sinon la zone de survol du dock part en haut à gauche) |
 | `bin/fond-anime` | Fond d'écran animé à partir d'une vidéo (mpv) |

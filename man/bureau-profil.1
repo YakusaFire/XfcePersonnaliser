@@ -12,6 +12,14 @@ bureau-profil \- enregistre et recharge des profils d'apparence du bureau Xfce
 .I nom
 .br
 .B bureau-profil list
+.br
+.B bureau-profil export
+.I nom
+.RI [ archive ]
+.br
+.B bureau-profil import
+.I archive
+.RI [ nom ]
 .SH DESCRIPTION
 Un profil garde l'apparence complète du bureau : les canaux xfconf
 .BR xsettings ,
@@ -47,6 +55,57 @@ fond animé.
 .TP
 .B list
 Liste les profils enregistrés.
+.TP
+.BI export " nom \fR[\fParchive\fR]"
+Range le profil dans une archive à partager, par défaut
+.IR nom .bureau-profil.tar.gz
+dans le dossier courant. Voir
+.BR "ÉCHANGE DE PROFILS" .
+.TP
+.BI import " archive \fR[\fPnom\fR]"
+Ajoute le profil d'une archive faite par
+.BR "bureau-profil export" ,
+sans l'appliquer : on le charge ensuite avec
+.BR load .
+Sans
+.IR nom ,
+le profil garde le nom de l'archive, suivi de
+.BR -2 ,
+.BR -3 …
+si ce nom est déjà pris ; un
+.I nom
+déjà pris est refusé.
+.SH "ÉCHANGE DE PROFILS"
+L'archive contient le profil, les images de son fond d'écran, et ses thèmes GTK, de fenêtres
+et de curseurs quand ils sont installés dans le dossier personnel (ceux de
+.I /usr/share
+viennent de paquets). Les thèmes d'icônes ne sont pas joints, car ils pèsent souvent des
+centaines de mégaoctets : l'export les cite, l'import dit lesquels installer. Les liens
+symboliques qui sortent du profil sont remplacés par ce qu'ils désignent.
+.PP
+L'archive ne garde ni le nom du compte ni ses chemins : dans les fichiers, le dossier personnel
+devient
+.B @HOME@
+et chaque image
+.BI @FONDS@/ nom\fR,
+et propriétaire et groupe y valent 0. L'export prévient s'il reste le dossier personnel ou le
+nom complet du compte dans un fichier.
+.PP
+À l'import, l'archive est extraite sans danger : elle est refusée si elle contient un chemin
+absolu, un
+.BR .. ,
+un lien qui sort de son dossier, un fichier spécial, autre chose qu'un profil, ou plus de
+512 Mo une fois décompressée. Les images vont dans le dossier des fonds de
+.BR bureau-reglages (1)
+(une image identique déjà là est reprise), les thèmes joints dans
+.I ~/.local/share/themes
+et
+.I ~/.local/share/icons
+(un thème du même nom déjà installé est gardé). Un profil complet venu d'un autre PC reçoit
+son fond d'écran pour les écrans de celui-ci. L'import dit enfin ce qui manquera (thème
+d'icônes, police) et liste les commandes que le profil peut lancer : lanceurs et greffons du
+panneau, commande personnalisée de Terminator. N'applique un profil reçu que s'il vient de
+quelqu'un de confiance.
 .SH "PROFILS « APPARENCE SEULEMENT »"
 Un profil peut contenir, à la place des canaux entiers, un fichier
 .IR reglages.conf .
@@ -81,14 +140,28 @@ pour un profil « apparence seulement ».
 Remplace
 .I ~/.config
 s'il est défini.
+.TP
+.B XDG_DATA_HOME
+Remplace
+.I ~/.local/share
+s'il est défini (thèmes importés, images quand le logiciel est installé en lecture seule).
 .SH "CODE DE RETOUR"
-0 si la commande a réussi. 1 si le profil est introuvable ou si la commande est incomplète ;
-un autre code si une étape échoue.
+0 si la commande a réussi. 1 si le profil est introuvable, si son nom est invalide (il ne peut
+contenir ni
+.B /
+ni être
+.B .
+ou
+.BR .. ),
+si une archive est refusée ou si la commande est incomplète ; un autre code si une étape
+échoue.
 .SH EXEMPLES
 .nf
 bureau-profil save mon-theme
 bureau-profil load sombre
 bureau-profil load _avant-load
+bureau-profil export mon-theme ~/Documents/mon-theme.bureau-profil.tar.gz
+bureau-profil import ~/Téléchargements/macos.bureau-profil.tar.gz
 .fi
 .SH "VOIR AUSSI"
 .BR bureau-reglages (1),

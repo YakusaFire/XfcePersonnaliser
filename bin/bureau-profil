@@ -1,12 +1,15 @@
 #!/bin/bash
 # Sauvegarde / restauration de l'apparence XFCE.
-#   bureau-profil save <nom>   enregistre l'apparence actuelle
-#   bureau-profil load <nom>   remet un profil enregistré
-#   bureau-profil list         liste les profils
+#   bureau-profil save <nom>               enregistre l'apparence actuelle
+#   bureau-profil load <nom>               remet un profil enregistré
+#   bureau-profil list                     liste les profils
+#   bureau-profil export <nom> [archive]   range un profil dans une archive à partager
+#   bureau-profil import <archive> [nom]   ajoute le profil d'une archive, sans l'appliquer
 # Un profil « apparence seulement » (profils d'exemple) a un fichier reglages.conf au lieu des
 # canaux xfconf entiers : seules ses propriétés sont réglées, le reste du bureau n'est pas touché.
 set -euo pipefail
 ICI="$(dirname "$(realpath "$0")")"
+APPEL=$PWD  # dossier d'où la commande est lancée : chemins relatifs des archives
 
 # Les programmes relancés héritent de ce dossier (ex. terminal ouvert depuis le dock)
 cd "$HOME"
@@ -18,7 +21,19 @@ CHANNELS=(xsettings xfwm4 xfce4-panel xfce4-desktop xfce4-terminal xfce4-notifyd
 # Fichiers/dossiers hors xfconf, relatifs à ~/.config ($XDG_CONFIG_HOME s'il est défini)
 EXTRA=(xfce4/panel terminator/config gtk-3.0/settings.ini gtk-3.0/gtk.css gtk-4.0 picom)
 
-usage() { sed -n '2,5p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+
+# Nom de profil sans « / », ni « . » ou « .. », ni allure d'option : le profil reste dans son
+# dossier (« save ../xfce4 » aurait effacé ~/.config/xfce4)
+nom_valide() {
+    case "$1" in ""|.|..|-*|*/*|*$'\n'*) return 1 ;; esac
+}
+# Nom d'un profil importé : comme dans l'interface, lettres, chiffres, « _ », « . » et « - »,
+# en commençant par une lettre ou un chiffre (pas « _avant-load »)
+nom_importable() { nom_valide "$1" && [[ $1 =~ ^[[:alnum:]][[:alnum:]_.-]*$ ]]; }
+verifier_nom() { nom_valide "$1" || { echo "Nom de profil invalide : « $1 »" >&2; exit 1; }; }
+
+absolu() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$APPEL/$1" ;; esac; }
 
 # Dossiers de thèmes ou d'icônes (TYPE : themes ou icons), dans l'ordre de GTK
 dossiers_donnees() {
@@ -216,9 +231,393 @@ load() {
 
 list() { ls -1 "$DIR" 2>/dev/null || echo "(aucun profil)"; }
 
+# --- Échange de profils (export / import) ---------------------------------------------------
+# Archive .tar.gz : « format » (« bureau-profil 1 », « nom NOM »), « profil/ » (le dossier du
+# profil), « fonds/ » (images du fond), « themes/ » et « curseurs/ » (thèmes installés dans le
+# dossier personnel ; ceux de /usr/share viennent de paquets). Les thèmes d'icônes ne sont pas
+# joints : trop lourds (souvent des centaines de Mo), l'import dit lesquels installer. Dans les
+# fichiers, le dossier personnel devient @HOME@ et chaque image @FONDS@/nom : l'archive ne
+# garde ni le nom du compte ni ses chemins, et propriétaire et groupe y sont 0.
+FORMAT="bureau-profil 1"
+EXT_ARCHIVE=".bureau-profil.tar.gz"
+DONNEES="${XDG_DATA_HOME:-$HOME/.local/share}"
+
+# Dossier des images du fond, comme l'interface : celui du logiciel s'il est modifiable (copie
+# de git), sinon ~/.local/share/bureau-reglages/fonds (logiciel installé dans /usr)
+dossier_fonds() {
+    local logiciel; logiciel=$(dirname "$ICI")
+    if [ -d "$logiciel/fonds" ]; then [ -w "$logiciel/fonds" ] && { echo "$logiciel/fonds"; return; }
+    elif [ -w "$logiciel" ]; then echo "$logiciel/fonds"; return
+    fi
+    echo "$DONNEES/bureau-reglages/fonds"
+}
+
+# theme_perso TYPE NOM CONTENU : dossier du thème NOM dans le dossier personnel (~/.TYPE ou
+# ~/.local/share/TYPE), s'il y est et contient CONTENU
+theme_perso() {
+    local d
+    for d in "$HOME/.$1" "$DONNEES/$1"; do
+        if [ -e "$d/$2/$3" ]; then echo "$d/$2"; return 0; fi
+    done
+    return 1
+}
+
+# liens_autonomes DOSSIER : un lien symbolique absolu ou qui sort du dossier (les thèmes GTK 4
+# en posent vers ~/.themes) est remplacé par ce qu'il désigne, un lien cassé est retiré ; les
+# liens relatifs internes restent
+liens_autonomes() {
+    local racine l cible
+    local -a liens
+    racine=$(realpath "$1")
+    mapfile -d '' liens < <(find "$1" -type l -print0)
+    for l in "${liens[@]}"; do
+        [ -L "$l" ] || continue
+        cible=$(realpath -m "$l")
+        if [[ $(readlink "$l") != /* && $cible == "$racine"/* ]]; then continue; fi
+        rm "$l"
+        if [ -e "$cible" ]; then cp -rL "$cible" "$l"; else echo "Lien cassé retiré : ${l#"$racine"/}"; fi
+    done
+}
+
+# joindre SOURCE DESTINATION : copie d'un thème pour l'archive, liens rendus autonomes
+joindre() { mkdir -p "$(dirname "$2")"; cp -a "$(realpath "$1")" "$2"; liens_autonomes "$2"; }
+
+# remplacer DOSSIER ANCIEN NOUVEAU [ANCIEN NOUVEAU…] : dans les fichiers texte du dossier, dans
+# l'ordre (aussi sous la forme échappée des fichiers XML). « ANCIEN » n'est remplacé que s'il
+# n'est pas suivi d'une lettre, d'un chiffre, de « . » ou de « - » : le dossier personnel du
+# compte « u » ne déborde pas sur celui du compte « u2 ».
+remplacer() {
+    python3 - "$@" <<'EOF'
+import os, re, sys
+from xml.sax.saxutils import escape
+dossier, args = sys.argv[1], sys.argv[2:]
+paires = list(zip(args[0::2], args[1::2]))
+def xml(t):
+    return escape(t, {'"': "&quot;"})
+for racine, _, fichiers in os.walk(dossier):
+    for f in fichiers:
+        chemin = os.path.join(racine, f)
+        if os.path.islink(chemin):
+            continue
+        try:
+            with open(chemin, "rb") as e:
+                brut = e.read()
+            texte = brut.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if "\0" in texte:
+            continue
+        nouveau = texte
+        for ancien, neuf in paires:
+            formes = [(ancien, neuf)] + ([(xml(ancien), xml(neuf))] if f.endswith(".xml") else [])
+            for a, n in formes:
+                nouveau = re.sub(re.escape(a) + r"(?![\w.-])", lambda _m: n, nouveau)
+        if nouveau != texte:
+            with open(chemin, "w", encoding="utf-8") as s:
+                s.write(nouveau)
+EOF
+}
+
+# infos_profil DOSSIER : « gtk », « wm », « icones », « curseurs » et « police » suivis du nom,
+# puis « fond CHEMIN » pour chaque image (profil complet ou « apparence seulement »)
+infos_profil() {
+    python3 - "$1" <<'EOF'
+import os, sys, xml.etree.ElementTree as ET
+p = sys.argv[1]
+def proprietes(fichier):
+    res = {}
+    try:
+        racine = ET.parse(fichier).getroot()
+    except (OSError, ET.ParseError):
+        return res
+    def parcourir(noeud, prefixe):
+        for q in noeud.findall("property"):
+            c = prefixe + "/" + q.get("name", "")
+            if q.get("value") is not None:
+                res[c] = q.get("value")
+            parcourir(q, c)
+    parcourir(racine, "")
+    return res
+reglages, fonds = os.path.join(p, "reglages.conf"), []
+if os.path.isfile(reglages):
+    xs, wm = {}, {}
+    with open(reglages, encoding="utf-8", errors="replace") as e:
+        for ligne in e:
+            champs = ligne.split(None, 3)
+            if not champs or champs[0].startswith("#"):
+                continue
+            if champs[0] == "fond" and len(champs) >= 2:
+                fonds.append(ligne.split(None, 1)[1].strip())
+            elif len(champs) == 4 and champs[0] in ("xsettings", "xfwm4"):
+                (xs if champs[0] == "xsettings" else wm)[champs[1]] = champs[3].strip()
+else:
+    x = os.path.join(p, "xfconf")
+    xs, wm = proprietes(os.path.join(x, "xsettings.xml")), proprietes(os.path.join(x, "xfwm4.xml"))
+    fonds = [v for k, v in proprietes(os.path.join(x, "xfce4-desktop.xml")).items() if k.endswith("/last-image")]
+for cle, prop, source in (("gtk", "/Net/ThemeName", xs), ("wm", "/general/theme", wm),
+                          ("icones", "/Net/IconThemeName", xs), ("curseurs", "/Gtk/CursorThemeName", xs),
+                          ("police", "/Gtk/FontName", xs)):
+    if source.get(prop):
+        print(cle, source[prop])
+for f in dict.fromkeys(fonds):
+    if f:
+        print("fond", f)
+EOF
+}
+
+# nom_libre DOSSIER NOM : NOM, ou « NOM (2).ext »… si une image différente porte déjà ce nom ;
+# avec FICHIER en 3e argument, une image identique déjà là est reprise
+nom_libre() {
+    local nom=$2 base ext i=2 dest
+    base=${nom%.*}; ext=${nom##*.}; [ "$base" != "$nom" ] || ext=""
+    dest="$1/$nom"
+    while [ -e "$dest" ] && ! { [ -n "${3:-}" ] && cmp -s "$dest" "$3"; }; do
+        dest="$1/$base ($i)${ext:+.$ext}"; i=$((i + 1))
+    done
+    printf '%s\n' "$dest"
+}
+
+exporter() {
+    local nom=$1 p="$DIR/$1" archive type valeur dest contenu origine compte nom_complet restes
+    local -a paires=()
+    [ -d "$p" ] || { echo "Profil « $nom » introuvable" >&2; exit 1; }
+    archive=$(absolu "${2:-$nom$EXT_ARCHIVE}")
+    T=$(mktemp -d); trap 'rm -rf "$T"' EXIT  # T global : le piège le voit encore à la sortie
+    cp -a "$p" "$T/profil"
+    liens_autonomes "$T/profil"
+    printf '%s\nnom %s\n' "$FORMAT" "$nom" > "$T/format"
+    while read -r type valeur; do
+        case "$valeur" in ""|.|..|*/*) [ "$type" = fond ] || continue ;; esac  # nom de thème douteux
+        case "$type" in
+            fond)
+                [ -f "$valeur" ] || { echo "Image absente, pas jointe : $valeur"; continue; }
+                mkdir -p "$T/fonds"
+                dest=$(nom_libre "$T/fonds" "$(basename "$valeur")")
+                cp "$valeur" "$dest"
+                paires+=("$valeur" "@FONDS@/$(basename "$dest")")
+                echo "Image jointe : $(basename "$dest")" ;;
+            gtk|wm)
+                if [ "$type" = gtk ]; then contenu=gtk-3.0/gtk.css; else contenu=xfwm4/themerc; fi
+                origine=$(theme_perso themes "$valeur" "$contenu") || continue
+                [ -e "$T/themes/$valeur" ] && continue  # thème GTK et xfwm4 dans le même dossier
+                joindre "$origine" "$T/themes/$valeur"
+                echo "Thème joint : $valeur" ;;
+            curseurs)
+                origine=$(theme_perso icons "$valeur" cursors) || continue
+                joindre "$origine" "$T/curseurs/$valeur"
+                echo "Curseurs joints : $valeur" ;;
+            icones)
+                if theme_perso icons "$valeur" index.theme >/dev/null; then
+                    echo "Thème d'icônes pas joint (trop lourd) : $valeur ($(du -sh "$(theme_perso icons "$valeur" index.theme)/" | cut -f1))"
+                fi ;;
+        esac
+    done < <(infos_profil "$p")
+    paires+=("$HOME" "@HOME@")
+    remplacer "$T" "${paires[@]}"
+
+    # Dernier contrôle : ni le dossier personnel, ni le nom complet du compte (s'il a un prénom
+    # et un nom) dans les fichiers texte de l'archive
+    compte=$(id -un); nom_complet=$(getent passwd "$compte" | cut -d: -f5 | cut -d, -f1 || true)
+    [[ $nom_complet == *" "* ]] || nom_complet=""
+    restes=$(grep -rlI -F -e "$HOME" ${nom_complet:+-e "$nom_complet"} "$T" | sed "s|^$T/||" || true)
+    if [ -n "$restes" ]; then
+        echo "Attention : ton dossier personnel ou ton nom reste dans ces fichiers de l'archive :"
+        sed 's/^/  /' <<< "$restes"
+    fi
+
+    mkdir -p "$(dirname "$archive")"
+    (cd "$T" && tar --owner=0 --group=0 --numeric-owner --sort=name -czf "$archive" -- *)
+    echo "Profil « $nom » exporté : ${archive/#$HOME/\~} ($(du -h "$archive" | cut -f1))"
+}
+
+# extraire ARCHIVE DOSSIER : extraction sans danger (filtre « data » de Python : ni chemin
+# absolu, ni « .. », ni lien qui sort du dossier, ni fichier spécial), 512 Mo au plus, et
+# seulement ce qu'une archive de profil contient
+extraire() {
+    python3 - "$1" "$2" <<'EOF'
+import sys, tarfile
+archive, dossier = sys.argv[1], sys.argv[2]
+PERMIS = {"format", "profil", "fonds", "themes", "curseurs"}
+try:
+    with tarfile.open(archive, "r:*") as t:
+        membres, total = t.getmembers(), 0
+        for m in membres:
+            nom = m.name[2:] if m.name.startswith("./") else m.name
+            if nom in ("", ".", "./"):
+                continue
+            if nom.split("/", 1)[0] not in PERMIS:
+                sys.exit(f"Archive refusée : « {m.name} » n'a rien à faire dans une archive de profil")
+            total += m.size
+        if total > 512 * 1024 * 1024:
+            sys.exit("Archive refusée : plus de 512 Mo une fois décompressée")
+        t.extractall(dossier, members=membres, filter="data")
+except tarfile.FilterError as e:
+    membre = getattr(getattr(e, "tarinfo", None), "name", "?")
+    sys.exit(f"Archive refusée : « {membre} » est dangereux (chemin ou lien qui sort du dossier, "
+             "ou fichier spécial)")
+except tarfile.ReadError:
+    sys.exit("Archive illisible : ce n'est pas une archive .tar.gz, ou elle est abîmée")
+except (tarfile.TarError, OSError, EOFError) as e:
+    sys.exit(f"Archive illisible : {e}")
+EOF
+}
+
+# installer_themes DOSSIER TYPE DÉJÀ_LÀ INSTALLÉ : chaque thème joint qui n'est installé nulle
+# part va dans ~/.local/share/TYPE ; un thème du même nom déjà installé est gardé tel quel
+installer_themes() {
+    local d nom cible="$DONNEES/$2"
+    [ -d "$1" ] || return 0
+    for d in "$1"/*/; do
+        [ -d "$d" ] || continue
+        nom=$(basename "$d")
+        if present "$2" "$nom" ""; then
+            echo "$3 : $nom"
+        else
+            mkdir -p "$cible"; cp -a "$d" "$cible/$nom"
+            echo "$4 : $nom (${cible/#$HOME/\~})"
+        fi
+    done
+}
+
+# Profil complet venu d'un autre PC : ses clés de fond d'écran portent les noms d'écran de
+# l'autre PC (monitoreDP-1…), qu'xfdesktop ne lirait pas ici. Son image principale est ajoutée
+# pour les écrans de ce PC, sur chaque espace de travail, sans rien retirer.
+fond_sur_mes_ecrans() {
+    local ecrans nb
+    ecrans=$(xrandr --listmonitors 2>/dev/null | awk 'NR > 1 {print $NF}' || true)
+    [ -n "$ecrans" ] || return 0
+    nb=$(xfconf-query -c xfwm4 -p /general/workspace_count 2>/dev/null || echo 4)
+    # shellcheck disable=SC2086  # un argument par écran
+    python3 - "$1" "$nb" $ecrans <<'EOF'
+import os, re, sys, xml.etree.ElementTree as ET
+dossier, nb, ecrans = sys.argv[1], sys.argv[2], sys.argv[3:]
+fichier = os.path.join(dossier, "xfce4-desktop.xml")
+try:
+    arbre = ET.parse(fichier)
+except (OSError, ET.ParseError):
+    sys.exit(0)
+racine, images = arbre.getroot(), {}
+def parcourir(noeud, prefixe, res, garder):
+    for q in noeud.findall("property"):
+        c = prefixe + "/" + q.get("name", "")
+        if q.get("value") is not None and garder(c):
+            res[c] = q.get("value")
+        parcourir(q, c, res, garder)
+parcourir(racine, "", images, lambda c: c.endswith("/last-image"))
+if not images:
+    sys.exit(0)
+try:  # nombre d'espaces de travail du profil, sinon celui du moment
+    wm = {}
+    parcourir(ET.parse(os.path.join(dossier, "xfwm4.xml")).getroot(), "", wm, lambda c: c == "/general/workspace_count")
+    nb = wm.get("/general/workspace_count", nb)
+except (OSError, ET.ParseError):
+    pass
+nb = int(nb) if str(nb).isdigit() else 4
+def rang(k):  # comme l'interface : écran nommé avant « monitor0 », workspace0 avant les autres
+    m = re.search(r"/monitor([^/]+)/workspace(\d+)/", k)
+    return (m.group(1).isdigit(), m.group(2) != "0", k) if m else (True, True, k)
+principale = images[min(images, key=rang)]
+def enfant(parent, nom):
+    for q in parent.findall("property"):
+        if q.get("name") == nom:
+            return q
+    return ET.SubElement(parent, "property", name=nom, type="empty")
+ajouts = 0
+for e in ecrans:
+    for n in range(nb):
+        cle = f"/backdrop/screen0/monitor{e}/workspace{n}/last-image"
+        if cle not in images:
+            noeud = racine
+            for nom in cle.strip("/").split("/")[:-1]:
+                noeud = enfant(noeud, nom)
+            ET.SubElement(noeud, "property", name="last-image", type="string", value=principale)
+            ajouts += 1
+if ajouts:
+    arbre.write(fichier, encoding="UTF-8", xml_declaration=True)
+    print("Fond d'écran ajouté pour les écrans de ce PC :", ", ".join(ecrans))
+EOF
+}
+
+# Commandes qu'un profil peut lancer : lanceurs et greffons du panneau (Exec=, Command=),
+# commande personnalisée de Terminator
+commandes_du_profil() {
+    {
+        grep -rhs -E '^(Exec|Command)=' "$1/config/xfce4/panel" | sed 's/^[^=]*=//' || true
+        grep -hs -E '^[[:space:]]*custom_command[[:space:]]*=' "$1/config/terminator/config" | sed 's/^[^=]*=[[:space:]]*//' || true
+    } | sort -u
+}
+
+importer() {
+    local archive nom f dest fonds type valeur famille commandes n
+    local -a paires=()
+    archive=$(absolu "$1")
+    [ -f "$archive" ] || { echo "Archive introuvable : $1" >&2; exit 1; }
+    T=$(mktemp -d); trap 'rm -rf "$T"' EXIT  # T global : le piège le voit encore à la sortie
+    extraire "$archive" "$T"
+    [ "$(sed -n 1p "$T/format" 2>/dev/null)" = "$FORMAT" ] ||
+        { echo "Ce n'est pas une archive de profil (faite par « bureau-profil export »)" >&2; exit 1; }
+    [ -f "$T/profil/reglages.conf" ] || [ -d "$T/profil/xfconf" ] ||
+        { echo "Archive sans profil à l'intérieur" >&2; exit 1; }
+    nom=${2:-$(sed -n 's/^nom //p' "$T/format" | sed -n 1p)}
+    nom_importable "$nom" ||
+        { echo "Nom de profil invalide : « $nom ». Donne-lui un nom : bureau-profil import ARCHIVE NOM" >&2; exit 1; }
+    if [ -e "$DIR/$nom" ]; then
+        [ -z "${2:-}" ] || { echo "Le profil « $nom » existe déjà : choisis un autre nom" >&2; exit 1; }
+        n=2; while [ -e "$DIR/$nom-$n" ]; do n=$((n + 1)); done
+        echo "Un profil « $nom » existe déjà : celui-ci s'appelle « $nom-$n »"
+        nom="$nom-$n"
+    fi
+
+    # Images, rangées avec celles de l'interface (une image identique déjà là est reprise)
+    if [ -d "$T/fonds" ]; then
+        fonds=$(dossier_fonds); mkdir -p "$fonds"
+        for f in "$T"/fonds/*; do
+            [ -f "$f" ] || continue
+            dest=$(nom_libre "$fonds" "$(basename "$f")" "$f")
+            [ -e "$dest" ] || cp "$f" "$dest"
+            paires+=("@FONDS@/$(basename "$f")" "$dest")
+            echo "Image : ${dest/#$HOME/\~}"
+        done
+    fi
+    paires+=("@HOME@" "$HOME")
+    remplacer "$T" "${paires[@]}"
+    installer_themes "$T/themes" themes "Thème déjà installé, gardé" "Thème installé"
+    installer_themes "$T/curseurs" icons "Curseurs déjà installés, gardés" "Curseurs installés"
+    [ ! -f "$T/profil/xfconf/xfce4-desktop.xml" ] || fond_sur_mes_ecrans "$T/profil/xfconf"
+
+    # Ce qui manquera au chargement (thème d'icônes, police…)
+    while read -r type valeur; do
+        case "$type" in
+            gtk) ! theme_absent xsettings /Net/ThemeName "$valeur" || echo "Thème GTK absent : $valeur" ;;
+            wm) ! theme_absent xfwm4 /general/theme "$valeur" || echo "Thème des fenêtres absent : $valeur" ;;
+            icones) ! theme_absent xsettings /Net/IconThemeName "$valeur" || echo "Thème d'icônes à installer : $valeur" ;;
+            curseurs) ! theme_absent xsettings /Gtk/CursorThemeName "$valeur" || echo "Curseurs absents : $valeur" ;;
+            police)
+                famille=$(sed -E 's/ [0-9.]+$//' <<< "$valeur")
+                if command -v fc-list >/dev/null && [ -z "$(fc-list "$famille" family)" ] &&
+                   [ -z "$(fc-list "${famille%% *}" family)" ]; then
+                    echo "Police absente : $famille (une autre la remplacera)"
+                fi ;;
+        esac
+    done < <(infos_profil "$T/profil")
+
+    commandes=$(commandes_du_profil "$T/profil")
+    if [ -n "$commandes" ]; then
+        echo "Ce profil lance ces commandes (lanceurs et greffons du panneau, terminal) :"
+        sed 's/^/  /' <<< "$commandes"
+        echo "Ne l'applique que s'il vient de quelqu'un de confiance."
+    fi
+    mkdir -p "$DIR"
+    mv "$T/profil" "$DIR/$nom"
+    [ ! -t 1 ] || echo "Pour l'appliquer : bureau-profil load $nom"  # dans un terminal (pas l'interface)
+    echo "Profil « $nom » importé, pas encore appliqué"
+}
+
 case "${1:-}" in
-    save) [ -n "${2:-}" ] || usage; save "$2" ;;
-    load) [ -n "${2:-}" ] || usage; load "$2" ;;
+    save) [ -n "${2:-}" ] || usage; verifier_nom "$2"; save "$2" ;;
+    load) [ -n "${2:-}" ] || usage; verifier_nom "$2"; load "$2" ;;
     list) list ;;
+    export) [ -n "${2:-}" ] || usage; verifier_nom "$2"; exporter "$2" "${3:-}" ;;
+    import) [ -n "${2:-}" ] || usage; importer "$2" "${3:-}" ;;
     *) usage ;;
 esac
