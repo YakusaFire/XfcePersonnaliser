@@ -281,6 +281,8 @@ Les commandes se lancent depuis le dossier du projet.
 | `lintian --pedantic paquet/*.deb` | Contrôle le paquet selon les règles de Debian (paquet `lintian`) : ni erreur ni avertissement attendu |
 | `tests/tester-paquet.sh` | Construit le paquet et le teste dans un Debian 13 neuf (conteneur Docker, sans réseau après la 1re fois) |
 | `tests/tester-paquet.sh --refaire` | Même chose en préparant de nouveau l'image d'essai |
+| `git tag -a v0.1.0 -m "Version 0.1.0"` puis `git push origin v0.1.0` | Étiquette de la version publiée, sur le commit dont on a construit le paquet (`VERSION=0.1.0`, rien de non commité) |
+| `gh release create v0.1.0 paquet/xfce-personnaliser_0.1.0_all.deb -F notes.md` | Publie la version sur GitHub avec son paquet et ses notes (commande `gh`, connectée au compte GitHub) |
 
 > Licence : GPL-3.0-or-later, texte complet dans `LICENSE`. Le paquet la déclare dans
 > `/usr/share/doc/xfce-personnaliser/copyright` (format de Debian, `GPL-3+`), qui renvoie au

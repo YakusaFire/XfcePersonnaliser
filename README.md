@@ -4,6 +4,8 @@ Personnalisation du bureau XFCE (Debian 13, XFCE 4.20) : profils d'apparence com
 effets de fenêtres avec picom ou Compiz, écran de connexion Catppuccin, fond d'écran animé,
 et une interface graphique qui regroupe le tout.
 
+![Page Profils de l'interface « Personnalisation du bureau »](captures/profils.png)
+
 ## Contenu
 
 | Élément | Rôle |
@@ -28,10 +30,29 @@ et une interface graphique qui regroupe le tout.
 | `fonds/` | Images proposées pour le fond d'écran (non versionnées) ; `~/.local/share/bureau-reglages/fonds/` si le projet est installé en lecture seule |
 | `fonds-animes/` | Vidéos proposées pour le fond animé (non versionnées) ; même règle |
 | `commandes-bureau.md` | Mémo de toutes les commandes et des fichiers utilisés |
+| `captures/` | Captures de l'interface pour cette page |
 
 ## Installation
 
-Pour l'utiliser et le modifier depuis ce dossier :
+Sur Debian 13 ou plus récent, le plus simple est le paquet Debian de la dernière version, à
+télécharger dans les [versions publiées](https://github.com/YakusaFire/XfcePersonnaliser/releases/latest).
+Depuis le dossier du téléchargement, il s'installe pour tout le système avec ses dépendances :
+
+```bash
+sudo apt install ./xfce-personnaliser_*_all.deb
+```
+
+Le paquet met le logiciel dans `/usr/share/xfce-personnaliser/`, les commandes dans
+`/usr/bin` et l'entrée « Personnalisation du bureau » dans le menu. Chaque utilisateur
+reçoit ses réglages de départ au premier lancement de l'interface. Le même paquet se
+construit depuis le dépôt :
+
+```bash
+./construire-deb.sh
+sudo apt install ./paquet/xfce-personnaliser_*_all.deb
+```
+
+Pour l'utiliser et le modifier depuis ce dossier, sans paquet :
 
 ```bash
 ./installer.sh
@@ -42,18 +63,6 @@ s'il est déplacé.
 
 Au premier lancement, l'interface propose deux profils d'exemple, `sombre` et `clair`, qui ne
 changent que l'apparence (thème, icônes, police, panneau, fond) avec ce que Debian fournit.
-
-Ou en paquet Debian (Debian 13 ou plus récent), installé pour tout le système avec ses
-dépendances :
-
-```bash
-./construire-deb.sh
-sudo apt install ./paquet/xfce-personnaliser_*_all.deb
-```
-
-Le paquet met le logiciel dans `/usr/share/xfce-personnaliser/`, les commandes dans
-`/usr/bin` et l'entrée « Personnalisation du bureau » dans le menu. Chaque utilisateur
-reçoit ses réglages de départ au premier lancement de l'interface.
 
 ## Dépendances
 
@@ -77,6 +86,10 @@ Compiz. Ce qui reste à faire pour que le projet marche sur n'importe quel Debia
 
 Menu **Paramètres → Personnalisation du bureau**, ou la commande `bureau-reglages`.
 Toutes les commandes sont décrites dans [commandes-bureau.md](commandes-bureau.md).
+
+| Apparence | Fenêtres et effets |
+|---|---|
+| ![Page Apparence : thèmes, barre de titre, icônes, curseur et polices](captures/apparence.png) | ![Page Fenêtres et effets : xfwm4 avec picom ou Compiz, et les effets de picom](captures/fenetres.png) |
 
 ## Licence
 
