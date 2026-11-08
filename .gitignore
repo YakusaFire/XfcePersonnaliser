@@ -15,6 +15,7 @@ paquet/
 
 # Notes de travail pour Claude Code, gardées en local
 CLAUDE.md
+.claude
 
 __pycache__/
 *.pyc
