@@ -4,7 +4,7 @@ Personnalisation du bureau XFCE (Debian 13, XFCE 4.20) : profils d'apparence com
 partager, effets de fenêtres avec picom (flou, règles par application) ou Compiz, écran de
 connexion Catppuccin, fond d'écran animé, et une interface graphique qui regroupe le tout.
 
-![Page Profils de l'interface « Personnalisation du bureau »](captures/profils.png)
+![Page Profils de l'interface « Personnalisation du bureau » : appliquer, exporter ou importer un profil](captures/profils.png)
 
 ## Contenu
 
@@ -68,7 +68,7 @@ Chaque commande a sa page de manuel, en français : `man bureau-reglages`, `man 
 
 | Apparence | Fenêtres et effets |
 |---|---|
-| ![Page Apparence : thèmes, barre de titre, icônes, curseur et polices](captures/apparence.png) | ![Page Fenêtres et effets : xfwm4 avec picom ou Compiz, et les effets de picom](captures/fenetres.png) |
+| ![Page Apparence : thèmes, barre de titre, icônes, curseur et polices](captures/apparence.png) | ![Page Fenêtres et effets : effets de picom, flou et réglages par application](captures/fenetres.png) |
 
 ## Licence
 
