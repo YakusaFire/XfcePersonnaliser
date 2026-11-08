@@ -23,13 +23,7 @@ et une interface graphique qui regroupe le tout.
 | `bin/rendu-logiciel` | Détecte un rendu OpenGL logiciel (machine virtuelle sans 3D) : picom passe alors en xrender |
 | `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand la vidéo ne peut pas passer sous le bureau (Compiz, rendu logiciel) |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
-| `installer.sh` | Installe les commandes dans `~/.local/bin`, leurs pages de manuel et l'entrée du menu |
 | `man/` | Pages de manuel des commandes, en français (`man fond-anime`…) |
-| `construire-deb.sh` | Fabrique le paquet Debian `xfce-personnaliser` dans `paquet/` |
-| `tests/tester-paquet.sh` | Teste le paquet dans un Debian 13 neuf (conteneur Docker) |
-| `fonds/` | Images proposées pour le fond d'écran (non versionnées) ; `~/.local/share/bureau-reglages/fonds/` si le projet est installé en lecture seule |
-| `fonds-animes/` | Vidéos proposées pour le fond animé (non versionnées) ; même règle |
-| `commandes-bureau.md` | Mémo de toutes les commandes et des fichiers utilisés |
 | `captures/` | Captures de l'interface pour cette page |
 
 ## Installation
@@ -44,25 +38,10 @@ sudo apt install ./xfce-personnaliser_*_all.deb
 
 Le paquet met le logiciel dans `/usr/share/xfce-personnaliser/`, les commandes dans
 `/usr/bin` et l'entrée « Personnalisation du bureau » dans le menu. Chaque utilisateur
-reçoit ses réglages de départ au premier lancement de l'interface. Le même paquet se
-construit depuis le dépôt :
-
-```bash
-./construire-deb.sh
-sudo apt install ./paquet/xfce-personnaliser_*_all.deb
-```
-
-Pour l'utiliser et le modifier depuis ce dossier, sans paquet :
-
-```bash
-./installer.sh
-```
-
-Les commandes de `~/.local/bin` sont des liens vers ce dossier : relancer `installer.sh`
-s'il est déplacé.
-
-Au premier lancement, l'interface propose deux profils d'exemple, `sombre` et `clair`, qui ne
-changent que l'apparence (thème, icônes, police, panneau, fond) avec ce que Debian fournit.
+reçoit ses réglages de départ au premier lancement de l'interface : deux profils d'exemple,
+`sombre` et `clair`, qui ne changent que l'apparence (thème, icônes, police, panneau, fond) avec
+ce que Debian fournit. Les images et vidéos ajoutées depuis l'interface sont rangées dans
+`~/.local/share/bureau-reglages/`.
 
 ## Dépendances
 
@@ -79,13 +58,13 @@ L'interface grise ce dont le programme manque et donne la commande `sudo apt ins
 elle prévient si la session n'est pas XFCE sous X11. Sans accélération graphique (machine
 virtuelle sans 3D), picom est réglé en xrender : la vidéo du fond animé ne peut plus passer sous
 le bureau (il faut glx), elle se pose dessus et ses icônes sont en lecture seule, comme avec
-Compiz. Ce qui reste à faire pour que le projet marche sur n'importe quel Debian est listé dans
-[portabilite.md](portabilite.md).
+Compiz.
 
 ## Utilisation
 
 Menu **Paramètres → Personnalisation du bureau**, ou la commande `bureau-reglages`.
-Toutes les commandes sont décrites dans [commandes-bureau.md](commandes-bureau.md).
+Chaque commande a sa page de manuel, en français : `man bureau-reglages`, `man bureau-profil`,
+`man bureau-wm`, `man fond-anime`, `man relancer-picom`…
 
 | Apparence | Fenêtres et effets |
 |---|---|

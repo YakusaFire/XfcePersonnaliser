@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # bureau-reglages : interface graphique de personnalisation du bureau XFCE.
-# Pilote les commandes du mémo commandes-bureau.md (bureau-profil, bureau-wm,
-# greeter-catppuccin.sh, fond-anime) et règle directement le thème, les icônes,
+# Pilote les commandes du projet (bureau-profil, bureau-wm, greeter-catppuccin.sh,
+# fond-anime) et règle directement le thème, les icônes,
 # le curseur, les polices, le fond d'écran et les effets de picom.
 
 import hashlib
@@ -1686,7 +1686,8 @@ class Fenetre(Gtk.ApplicationWindow):
         self.ligne_memo = ligne("Mémo des commandes", MEMO, bouton("Ouvrir", lambda: self.detacher("xdg-open", MEMO)))
         self.ligne_param_xfce = ligne("Paramètres d'apparence d'XFCE", "Tous les réglages d'origine d'XFCE.",
                                       bouton("Ouvrir", lambda: self.detacher("xfce4-appearance-settings")))
-        self.carte(b, self.ligne_param_xfce, self.ligne_memo)
+        # Le mémo n'existe que dans le dossier de développement : ni publié, ni dans le paquet
+        self.carte(b, self.ligne_param_xfce, *([self.ligne_memo] if os.path.isfile(MEMO) else []))
 
     def maj_outils(self, e):
         self.ligne_relance_picom.set_sensitive(e.mode != "compiz" and e.picom_actif)

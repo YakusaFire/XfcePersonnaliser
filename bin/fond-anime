@@ -38,7 +38,7 @@ mkdir -p "$CONF_DIR"
 
 # Commande à écrire dans une entrée de démarrage, en chemin complet (le PATH de la session n'a
 # pas forcément ~/.local/bin) : un lien vers ce script trouvé dans le PATH ou dans ~/.local/bin
-# (installer.sh), /usr/bin pour un paquet…, sinon le script lui-même
+# (installation de développement), /usr/bin pour un paquet…, sinon le script lui-même
 chemin_commande() {
     local d IFS=:
     for d in $PATH "$HOME/.local/bin"; do

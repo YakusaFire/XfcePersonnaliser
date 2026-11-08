@@ -4,7 +4,7 @@
 #   bureau-modeles   installe ce qui manque et l'affiche (rien à dire : n'affiche rien)
 # (~/.config ci-dessous : $XDG_CONFIG_HOME s'il est défini)
 #
-# Lancé par installer.sh, par bureau-reglages à son ouverture et par fond-anime.
+# Lancé par bureau-reglages à son ouverture, par fond-anime et par l'installation de développement.
 #   ~/.config/picom/picom.conf             réglages de picom 12 (ombres, coins, animations, règles)
 #   ~/.config/picom/fond-anime.glsl        shader du fond animé
 #   ~/.config/gtk-3.0/gtk.css.desactive    style du Alt+Tab, désactivé (à allumer dans l'interface)
@@ -24,7 +24,7 @@ esac
 
 # Commande à écrire dans une entrée de démarrage, en chemin complet (le PATH de la session n'a
 # pas forcément ~/.local/bin) : un lien vers ce script trouvé dans le PATH ou dans ~/.local/bin
-# (installer.sh), /usr/bin pour un paquet…, sinon le script lui-même
+# (installation de développement), /usr/bin pour un paquet…, sinon le script lui-même
 chemin_commande() {
     local d IFS=:
     for d in $PATH "$HOME/.local/bin"; do

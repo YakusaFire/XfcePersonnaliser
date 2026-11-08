@@ -1,15 +1,20 @@
-# Vidéos du fond animé : personnelles et lourdes, gardées hors du dépôt
-fonds-animes/*
-!fonds-animes/.gitkeep
-# Images des fonds d'écran : droits d'auteur de leurs créateurs, gardées hors du dépôt
-fonds/*
-!fonds/.gitkeep
+# Vidéos du fond animé et images des fonds d'écran : personnelles, lourdes ou sous droits
+# d'auteur de leurs créateurs. L'interface crée ces dossiers quand il le faut.
+fonds-animes/
+fonds/
 
-__pycache__/
-*.pyc
+# Outils et notes de développement, gardés en local : installation par liens, fabrication et
+# test du paquet Debian (publié avec chaque version sur GitHub), mémo personnel des commandes,
+# suivi de la portabilité
+installer.sh
+construire-deb.sh
+tests/
+commandes-bureau.md
+portabilite.md
+paquet/
 
 # Notes de travail pour Claude Code, gardées en local
 CLAUDE.md
 
-# Paquet Debian construit par construire-deb.sh
-paquet/
+__pycache__/
+*.pyc
