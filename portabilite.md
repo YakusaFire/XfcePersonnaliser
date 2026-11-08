@@ -112,6 +112,7 @@ textes et interrupteur de l'interface. Ce que ces essais ont appris :
 | 🟠 | Le dock est le **panneau 2**, en masquage intelligent, et la relance du panneau corrige sa zone de survol | Avec un autre agencement de panneaux, la relance ne gêne pas mais l'explication de l'interface ne colle plus. Rien de cassé. |
 | ✅ | Carte graphique qui gère bien `backend = "glx"` | | **Corrigé** : `bin/rendu-logiciel` détecte le rendu OpenGL logiciel ; `bureau-modeles` règle alors picom en xrender. |
 | 🟢 | `XDG_VTNR` défini (pause quand on change de console) | Déjà géré : la vérification est sautée s'il manque. |
+| ✅ | **Un seul compte ouvert à la fois** | **Corrigé** *(8/11)* et revérifié sur un compte neuf. Avec deux comptes ouverts (changement d'utilisateur), `pgrep` et `pkill` sans `-u` voyaient le picom et la vidéo de l'autre compte : sur le compte neuf, l'interrupteur Picom paraissait allumé sans que picom tourne, la vidéo revenait à l'ouverture de session sans être demandée, et picom ne redémarrait pas en quittant Compiz (vidéo invisible sous le bureau). Toutes les recherches de processus se limitent maintenant au compte. |
 | 🟢 | Un seul utilisateur, droits sudo / polkit | Normal pour un poste perso. |
 
 ## 7. Langue
@@ -188,7 +189,10 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    `no-manual-page`, pour les commandes internes : `bureau-modeles`, `fond-anime-fond`,
    `fond-anime-icones`, `fond-anime-video`, `rendu-logiciel`.
 
-   **Reste** : un essai avec accélération 3D (dans cette VM, la 3D de VirtualBox ralentissait
-   tout et bloquait les instantanés).
+   ✅ **Essai avec accélération 3D** *(8/11)* : compte neuf sur une vraie machine (carte AMD,
+   picom en glx), avec le paquet. La vidéo passe sous le bureau et ses icônes restent
+   utilisables ; la pause automatique et le dock marchent, à l'ouverture de session aussi. Le
+   compte principal restait ouvert pendant l'essai : les scripts voyaient ses processus
+   (section 6) : corrigé, puis revérifié par un second essai sur un compte neuf.
 6. Facultatif : ✅ xwinwrap *(remplacé le 7/11 par `fond-anime-video --type-bureau`, voir la
    section 4)*, Debian 12, traduction.

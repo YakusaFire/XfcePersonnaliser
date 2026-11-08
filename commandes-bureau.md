@@ -158,8 +158,8 @@ autre espace de travail (extension « wall ») ne compte pas.
 | `fond-anime pause-auto on` | Met la vidéo en pause tant qu'elle ne se voit pas (réglage par défaut) |
 | `fond-anime pause-auto off` | La vidéo tourne tout le temps, même cachée |
 | `fond-anime --help` | Affiche l'aide |
-| `pgrep -af "^mpv .*fond-anime-mpv"` | Vérifie s'il tourne (aucune ligne = arrêté) |
-| `pgrep -af "^python3 [^ ]*/fond-anime-vide[o] "` | Montre le mode : avec `--type-bureau`, vidéo posée sur le bureau (icônes en lecture seule) ; sans, vidéo sous le bureau |
+| `pgrep -u "$USER" -af "^mpv .*fond-anime-mpv"` | Vérifie s'il tourne (aucune ligne = arrêté). `-u "$USER"` : seulement ton compte, si un autre compte est ouvert en même temps |
+| `pgrep -u "$USER" -af "^python3 [^ ]*/fond-anime-vide[o] "` | Montre le mode : avec `--type-bureau`, vidéo posée sur le bureau (icônes en lecture seule) ; sans, vidéo sous le bureau |
 | `fond-anime-fond etat` | Dit si le fond de xfdesktop est masqué (`masqué`) ou normal |
 | `fond-anime-fond restaurer` | Remet le vrai fond d'écran si le bureau reste noir sans vidéo |
 

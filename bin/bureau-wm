@@ -50,7 +50,7 @@ sync_theme() {
 
 start_compiz() {
     sync_theme
-    pkill -x picom || true
+    pkill -u "$(id -u)" -x picom || true
     compiz --replace ccp &>/dev/null & disown
     sleep 2
     gtk-window-decorator --replace &>/dev/null & disown
@@ -59,7 +59,7 @@ start_compiz() {
 
 start_xfwm4() {
     # Nom de plus de 15 caractères : « pkill -x » ne le trouverait jamais (le noyau le tronque)
-    pkill -f '^([^ ]*/)?gtk-window-decorator( |$)' || true
+    pkill -u "$(id -u)" -f '^([^ ]*/)?gtk-window-decorator( |$)' || true
     # -n -t bool : la propriété n'existe pas encore sur un compte neuf (xfwm4 garde ses défauts)
     if command -v picom >/dev/null; then
         xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
@@ -69,7 +69,8 @@ start_xfwm4() {
     fi
     setsid xfwm4 --replace &>/dev/null &
     sleep 2
-    if command -v picom >/dev/null && ! pgrep -x picom >/dev/null; then
+    # -u : le picom d'un autre compte ouvert en même temps ne compose pas cette session
+    if command -v picom >/dev/null && ! pgrep -u "$(id -u)" -x picom >/dev/null; then
         (setsid picom &>/dev/null &)
     fi
     restart_panel
@@ -80,7 +81,7 @@ start_xfwm4() {
 restart_panel() {
     # Sans panneau lancé, « xfce4-panel --quit » (comme -r) attend sans fin : on ne l'appelle que s'il tourne
     if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit &>/dev/null || true; fi
-    for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
+    for _ in $(seq 30); do pgrep -u "$(id -u)" -x xfce4-panel >/dev/null || break; sleep 0.1; done
     setsid xfce4-panel &>/dev/null &
 }
 

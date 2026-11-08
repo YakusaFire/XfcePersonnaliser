@@ -70,9 +70,10 @@ fi
 
 # Démarrage automatique : l'entrée n'est active que si elle correspond à ce qui tourne déjà,
 # pour ne rien changer à la prochaine ouverture de session sans que l'utilisateur l'ait choisi
+# (picom de ce compte seulement : celui d'un autre compte ouvert en même temps ne compte pas)
 AUTO="$CONF/autostart"
 if copier autostart/picom.desktop "$AUTO/picom.desktop"; then
-    pgrep -x picom >/dev/null || echo "Hidden=true" >> "$AUTO/picom.desktop"
+    pgrep -u "$(id -u)" -x picom >/dev/null || echo "Hidden=true" >> "$AUTO/picom.desktop"
 fi
 if copier autostart/compiz.desktop "$AUTO/compiz.desktop"; then
     wm="$(chemin_commande bureau-wm)"

@@ -139,7 +139,7 @@ setsid -f xfwm4 --replace >/dev/null 2>&1
 sleep 2
 # Sans panneau lancé, « xfce4-panel --quit » attend sans fin : on ne l'appelle que s'il tourne
 if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit >/dev/null 2>&1; fi
-for _ in $(seq 30); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
+for _ in $(seq 30); do pgrep -u "$(id -u)" -x xfce4-panel >/dev/null || break; sleep 0.1; done
 setsid -f xfce4-panel >/dev/null 2>&1
 """
 # Relance du panneau : arrêt (s'il tourne) puis démarrage. « xfce4-panel -r » attend sans fin sans
@@ -199,8 +199,10 @@ def entier(valeur, defaut):
 
 
 def processus(*motif):
+    """Un processus de ce compte : un autre compte ouvert en même temps (changement
+    d'utilisateur) a son propre picom et son propre fond animé."""
     try:
-        return subprocess.run(["pgrep", *motif], capture_output=True).returncode == 0
+        return subprocess.run(["pgrep", "-u", str(os.getuid()), *motif], capture_output=True).returncode == 0
     except OSError:
         return False
 

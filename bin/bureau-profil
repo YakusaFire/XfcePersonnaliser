@@ -123,8 +123,8 @@ appliquer_reglages() {
 # xfconfd garde les réglages en mémoire et ne les écrit qu'à sa sortie :
 # on l'arrête et on attend qu'il ait fini (il redémarre tout seul au besoin).
 flush_xfconf() {
-    pkill -x xfconfd || return 0
-    for _ in $(seq 50); do pgrep -x xfconfd >/dev/null || return 0; sleep 0.1; done
+    pkill -u "$(id -u)" -x xfconfd || return 0
+    for _ in $(seq 50); do pgrep -u "$(id -u)" -x xfconfd >/dev/null || return 0; sleep 0.1; done
 }
 
 save() {
@@ -171,7 +171,7 @@ load() {
     # voit leurs fichiers disparaître et vide sa liste.
     # Sans panneau lancé, « xfce4-panel --quit » (comme -r) attend sans fin : on ne l'appelle que s'il tourne
     if pgrep -u "$(id -u)" -x xfce4-panel >/dev/null; then xfce4-panel --quit &>/dev/null || true; fi
-    for _ in $(seq 50); do pgrep -x xfce4-panel >/dev/null || break; sleep 0.1; done
+    for _ in $(seq 50); do pgrep -u "$(id -u)" -x xfce4-panel >/dev/null || break; sleep 0.1; done
     retirer_absentes "$p"
     flush_xfconf
     mkdir -p "$XML"
@@ -198,10 +198,10 @@ load() {
         # S'il a été désactivé (bureau-reglages), xfwm4 reprend son compositeur intégré.
         if command -v picom >/dev/null && ! grep -qx 'Hidden=true' "$CONF/autostart/picom.desktop" 2>/dev/null; then
             xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s false
-            pkill -x picom || true; sleep 0.3
+            pkill -u "$(id -u)" -x picom || true; sleep 0.3
             picom &>/dev/null & disown
         else
-            pkill -x picom || true
+            pkill -u "$(id -u)" -x picom || true
             xfconf-query -c xfwm4 -p /general/use_compositing -n -t bool -s true
         fi
         xfwm4 --replace &>/dev/null & disown

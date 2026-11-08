@@ -48,8 +48,10 @@ chemin_commande() {
     echo "$ICI/$1"
 }
 
-# Motifs ancrés sur le programme lancé : un éditeur ou un grep qui cite ces noms n'est pas visé
-en_cours() { pgrep -f "^mpv .*fond-anime-mp[v]" >/dev/null; }
+# Motifs ancrés sur le programme lancé : un éditeur ou un grep qui cite ces noms n'est pas visé.
+# Processus de ce compte seulement (-u) : sinon, avec un autre compte ouvert en même temps, son
+# picom ou sa vidéo font croire que ceux de cette session tournent
+en_cours() { pgrep -u "$(id -u)" -f "^mpv .*fond-anime-mp[v]" >/dev/null; }
 
 arreter_video() {
     if [[ -f "$PIDFILE" ]]; then
@@ -57,8 +59,8 @@ arreter_video() {
         rm -f "$PIDFILE"
     fi
     # au cas où une instance aurait été lancée hors du script
-    pkill -f "^python3 [^ ]*/fond-anime-vide[o] " 2>/dev/null
-    pkill -f "^python3 [^ ]*/fond-anime-icone[s]" 2>/dev/null
+    pkill -u "$(id -u)" -f "^python3 [^ ]*/fond-anime-vide[o] " 2>/dev/null
+    pkill -u "$(id -u)" -f "^python3 [^ ]*/fond-anime-icone[s]" 2>/dev/null
     return 0
 }
 
@@ -93,12 +95,12 @@ restaurer_fond() {
 # picom compose l'écran (mode xfwm4) ; à l'ouverture de session, il peut démarrer un peu après
 picom_pret() {
     [ "$("$ICI/bureau-wm" 2>/dev/null)" != compiz ] || return 1
-    pgrep -x picom >/dev/null && return 0
+    pgrep -u "$(id -u)" -x picom >/dev/null && return 0
     [ -f "$CONF/autostart/picom.desktop" ] &&
         ! grep -qx 'Hidden=true' "$CONF/autostart/picom.desktop" || return 1
     for _ in $(seq 20); do
         sleep 0.5
-        pgrep -x picom >/dev/null && return 0
+        pgrep -u "$(id -u)" -x picom >/dev/null && return 0
     done
     return 1
 }
