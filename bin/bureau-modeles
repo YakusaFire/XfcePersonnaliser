@@ -46,6 +46,8 @@ copier() {
 # plus l'écran (panneau relancé invisible, fenêtres figées) ; xrender marche, sans le shader
 # du fond animé
 if copier picom/picom.conf "$CONF/picom/picom.conf" && "$ICI/rendu-logiciel"; then
+    # Apostrophes typographiques voulues : elles font partie du commentaire écrit dans picom.conf
+    # shellcheck disable=SC1112
     sed -i 's|^backend = "glx";|# Rendu logiciel détecté (pas d’accélération 3D) : glx ne redessine plus l’écran, xrender\n# marche. Le fond animé sous le bureau a besoin de glx.\nbackend = "xrender";|' \
         "$CONF/picom/picom.conf"
     echo "Rendu logiciel : picom réglé en xrender"

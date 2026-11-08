@@ -171,7 +171,7 @@ start() {
     local lecteur=(mpv -wid WID
         # Sans accélération graphique, mpv se rabattrait sur sdl, qui ignore -wid et ouvre sa
         # propre fenêtre : seulement des sorties qui s'intègrent, et le rendu logiciel accepté
-        --vo=gpu,gpu-next,x11 --gpu-sw=yes
+        "--vo=gpu,gpu-next,x11" --gpu-sw=yes  # un seul élément : liste de sorties pour mpv
         --x11-name=fond-anime-mpv
         --loop-file=inf
         --no-audio

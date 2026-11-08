@@ -182,7 +182,7 @@ load() {
     done
     for e in "${EXTRA[@]}"; do
         [ -e "$p/config/$e" ] || continue
-        rm -rf "$CONF/$e"
+        rm -rf "${CONF:?}/${e:?}"  # jamais « rm -rf ~/.config/ » si un nom venait à manquer
         mkdir -p "$CONF/$(dirname "$e")"
         cp -a "$p/config/$e" "$CONF/$e"
     done

@@ -6,8 +6,9 @@
 #   relancer-picom arreter   arrête picom et rend la main au compositeur d'xfwm4
 set -u
 
-# Les programmes relancés héritent de ce dossier (comme dans bureau-wm)
-cd "$HOME"
+# Les programmes relancés héritent de ce dossier (comme dans bureau-wm, qui s'arrête aussi
+# s'il n'y arrive pas)
+cd "$HOME" || exit 1
 
 arreter_picom() {
     pkill -u "$(id -u)" -x picom
