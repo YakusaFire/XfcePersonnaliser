@@ -2,9 +2,10 @@
 
 Mémo des commandes créées pour styliser le bureau (Debian 13 + XFCE).
 
-Les commandes principales ont aussi leur page de manuel, en français : `man bureau-reglages`,
-`man bureau-profil`, `man bureau-wm`, `man fond-anime`, `man relancer-picom`. Les pages sont dans
-`man/`, liées dans `~/.local/share/man/man1` par `installer.sh` ou installées par le paquet.
+Les commandes ont aussi leur page de manuel, en français : `man bureau-reglages`,
+`man bureau-profil`, `man bureau-wm`, `man fond-anime`, `man relancer-picom`, et pour le dépannage
+`man fond-anime-fond`, `man bureau-modeles`, `man rendu-logiciel`. Les pages sont dans `man/`,
+liées dans `~/.local/share/man/man1` par `installer.sh` ou installées par le paquet.
 
 ---
 
@@ -277,7 +278,7 @@ Les commandes se lancent depuis le dossier du projet.
 | `sudo apt install ./paquet/xfce-personnaliser_*_all.deb` | Installe le paquet et ses dépendances |
 | `sudo apt remove xfce-personnaliser` | Le désinstalle (les réglages de `~/.config` restent) |
 | `dpkg-deb --contents paquet/*.deb` | Liste ce que contient le paquet |
-| `lintian --pedantic paquet/*.deb` | Contrôle le paquet selon les règles de Debian (paquet `lintian`) ; restent seulement les avertissements « pas de page de manuel » |
+| `lintian --pedantic paquet/*.deb` | Contrôle le paquet selon les règles de Debian (paquet `lintian`) : ni erreur ni avertissement attendu |
 | `tests/tester-paquet.sh` | Construit le paquet et le teste dans un Debian 13 neuf (conteneur Docker, sans réseau après la 1re fois) |
 | `tests/tester-paquet.sh --refaire` | Même chose en préparant de nouveau l'image d'essai |
 
@@ -295,7 +296,8 @@ Les commandes se lancent depuis le dossier du projet.
 > l'identité git. Le paquet contient les fichiers du dépôt sauf ceux ignorés par git (ni
 > `fonds/`, ni `fonds-animes/`, ni `CLAUDE.md`).
 > Installé, le logiciel est dans `/usr/share/xfce-personnaliser/` (lecture seule) avec des
-> liens dans `/usr/bin` : les images et vidéos ajoutées vont dans
+> liens dans `/usr/bin`, sauf pour `fond-anime-video` et `fond-anime-icones`, que seul
+> `fond-anime` lance. Les images et vidéos ajoutées vont dans
 > `~/.local/share/bureau-reglages/`. L'entrée du menu vient du même modèle que celle
 > d'`installer.sh` (`config/bureau-reglages.desktop`).
 > Dépendances : XFCE (xfconf, xfwm4, xfdesktop4, xfce4-panel, xfce4-settings), Python avec

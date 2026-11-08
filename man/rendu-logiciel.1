@@ -1,0 +1,44 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de rendu-logiciel (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH RENDU-LOGICIEL 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+rendu-logiciel \- dit si OpenGL est dessiné en logiciel, sans accélération 3D
+.SH SYNOPSIS
+.B rendu-logiciel
+.SH DESCRIPTION
+.B rendu-logiciel
+réussit si OpenGL est dessiné par le processeur (llvmpipe, softpipe ou swrast), comme dans
+une machine virtuelle sans accélération 3D, et échoue avec une vraie carte graphique. La
+commande n'affiche rien : elle lit la sortie de
+.B "glxinfo \-B"
+sur l'écran de
+.BR DISPLAY .
+Sans
+.BR glxinfo (1)
+(paquet mesa-utils) ou sans écran, elle échoue : une vraie carte graphique est alors
+supposée.
+.PP
+Elle sert à
+.BR bureau-modeles (1),
+qui règle alors picom en xrender, car en glx picom ne redessine plus l'écran en rendu
+logiciel ; et à
+.BR fond-anime (1),
+qui se passe alors du décodage matériel, car mpv se bloquerait en cherchant un décodeur
+Vulkan. Sans glx, la vidéo du fond animé ne peut pas passer sous le bureau : elle se pose
+dessus, et ses icônes ne se déplacent plus.
+.SH ENVIRONNEMENT
+.TP
+.B DISPLAY
+Écran X interrogé.
+.SH "CODE DE RETOUR"
+0 en rendu logiciel ; 1 avec une carte graphique, ou sans glxinfo ni écran.
+.SH EXEMPLES
+.nf
+rendu-logiciel && echo "rendu logiciel" || echo "carte graphique"
+.fi
+.SH "VOIR AUSSI"
+.BR glxinfo (1),
+.BR bureau-modeles (1),
+.BR fond-anime (1),
+.BR picom (1)

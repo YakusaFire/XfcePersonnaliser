@@ -38,8 +38,10 @@ for f in bureau-reglages.py greeter-catppuccin.sh commandes-bureau.md $(git ls-f
 done
 
 # Commandes dans /usr/bin : liens relatifs vers le dossier du logiciel (les scripts y
-# retrouvent leurs voisins par leur propre chemin)
+# retrouvent leurs voisins par leur propre chemin). Sauf les deux commandes internes, que seul
+# fond-anime lance, par leur chemin : elles n'ont pas de page de manuel
 for f in $(git ls-files --cached --others --exclude-standard bin); do
+    case "$(basename "$f")" in fond-anime-video|fond-anime-icones) continue ;; esac
     ln -s "../share/$NOM/$f" "$RACINE/usr/bin/$(basename "$f")"
 done
 ln -s "../share/$NOM/bureau-reglages.py" "$RACINE/usr/bin/bureau-reglages"

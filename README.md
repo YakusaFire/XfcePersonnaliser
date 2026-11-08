@@ -22,7 +22,7 @@ et une interface graphique qui regroupe le tout.
 | `bin/fond-anime-icones` | Icônes affichées par-dessus le fond animé quand la vidéo ne peut pas passer sous le bureau (Compiz, rendu logiciel) |
 | `greeter-catppuccin.sh` | Style Catppuccin Mocha pour l'écran de connexion LightDM |
 | `installer.sh` | Installe les commandes dans `~/.local/bin`, leurs pages de manuel et l'entrée du menu |
-| `man/` | Pages de manuel des commandes principales, en français (`man fond-anime`…) |
+| `man/` | Pages de manuel des commandes, en français (`man fond-anime`…) |
 | `construire-deb.sh` | Fabrique le paquet Debian `xfce-personnaliser` dans `paquet/` |
 | `tests/tester-paquet.sh` | Teste le paquet dans un Debian 13 neuf (conteneur Docker) |
 | `fonds/` | Images proposées pour le fond d'écran (non versionnées) ; `~/.local/share/bureau-reglages/fonds/` si le projet est installé en lecture seule |

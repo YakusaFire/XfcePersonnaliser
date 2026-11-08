@@ -185,9 +185,10 @@ utilisateurs francophones ; pour aller plus loin, il faudrait passer les textes 
    des versions `changelog.gz`, sommes `md5sums`, « Xfce » dans la description. Exception déclarée
    pour le mémo, gardé hors de `/usr/share/doc` parce que l'interface l'ouvre. ✅ Pages de manuel
    en français pour les cinq commandes principales *(7/11)*, avec une exception déclarée pour le
-   correcteur d'orthographe de lintian, qui est anglais. Restent cinq avertissements
-   `no-manual-page`, pour les commandes internes : `bureau-modeles`, `fond-anime-fond`,
-   `fond-anime-icones`, `fond-anime-video`, `rendu-logiciel`.
+   correcteur d'orthographe de lintian, qui est anglais. ✅ Plus aucun avertissement *(8/11)* :
+   pages de manuel aussi pour `fond-anime-fond`, `bureau-modeles` et `rendu-logiciel`, qui
+   servent au dépannage ; `fond-anime-video` et `fond-anime-icones`, que seul `fond-anime`
+   lance, ne sont plus dans `/usr/bin`.
 
    ✅ **Essai avec accélération 3D** *(8/11)* : compte neuf sur une vraie machine (carte AMD,
    picom en glx), avec le paquet. La vidéo passe sous le bureau et ses icônes restent

@@ -1,0 +1,90 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de fond-anime-fond (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH FOND-ANIME-FOND 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+fond-anime-fond \- masque le fond d'écran d'Xfce pendant le fond animé, puis le remet
+.SH SYNOPSIS
+.B fond-anime-fond masquer
+.RI [ RRGGBB ]
+.br
+.B fond-anime-fond
+.RB { restaurer | etat }
+.br
+.B fond-anime-fond corriger
+.I fichier
+.SH DESCRIPTION
+Quand la vidéo de
+.BR fond-anime (1)
+passe sous le bureau (picom en glx),
+.B fond-anime-fond
+remplace le fond d'écran de xfdesktop par une couleur unie. Le shader de
+.BR picom (1)
+rend cette couleur transparente tant que la fenêtre du bureau porte la propriété X
+.BR _FOND_ANIME " :"
+la vidéo apparaît alors derrière les icônes. Le vrai fond de chaque écran et de chaque
+espace de travail est gardé de côté, puis remis quand la vidéo s'arrête.
+.PP
+.B fond-anime
+s'en charge tout seul : à la main, la commande sert surtout au dépannage.
+.SH COMMANDES
+.TP
+\fBmasquer\fR [\fIRRGGBB\fR]
+Garde le fond actuel de côté, pose la couleur
+.I RRGGBB
+(en hexadécimal, par exemple
+.BR 1e1e2e ),
+puis la propriété
+.B _FOND_ANIME
+sur la fenêtre du bureau.
+.B fond-anime
+donne la couleur moyenne de la vidéo, pour que les bords des icônes s'y fondent ; sans
+couleur, le fond devient presque noir.
+.TP
+.B restaurer
+Retire la propriété
+.B _FOND_ANIME
+et remet le fond gardé de côté. Un fond resté masqué sans rien de gardé reprend les
+réglages par défaut d'xfdesktop.
+.TP
+\fBcorriger\fR \fIfichier\fR
+Dans
+.IR fichier ,
+une copie de
+.IR xfce4-desktop.xml ,
+remplace la couleur de masquage par le fond gardé de côté.
+.BR bureau-profil (1)
+s'en sert pour qu'un profil enregistré pendant la vidéo garde le vrai fond.
+.TP
+.B etat
+Affiche
+.B masqué
+si le fond d'un écran porte la couleur de masquage, sinon
+.BR normal .
+.SH FICHIERS
+.TP
+.I ~/.config/fond-anime/fond-xfdesktop.json
+Vrai fond gardé de côté (couleur de masquage, puis réglages de chaque écran et espace de
+travail) ; supprimé par
+.BR restaurer .
+.SH ENVIRONNEMENT
+.TP
+.B XDG_CONFIG_HOME
+Remplace
+.I ~/.config
+s'il est défini.
+.SH "CODE DE RETOUR"
+0 si la commande a réussi ; 1 pour une couleur invalide ou une commande inconnue.
+.SH EXEMPLES
+Le bureau reste d'une couleur unie alors qu'aucune vidéo ne tourne, par exemple après une
+session fermée pendant le fond animé :
+.PP
+.nf
+fond-anime-fond etat
+fond-anime-fond restaurer
+.fi
+.SH "VOIR AUSSI"
+.BR fond-anime (1),
+.BR bureau-profil (1),
+.BR picom (1),
+.BR xfdesktop (1)

@@ -10,8 +10,11 @@ dpkg -i /paquet/*.deb >/tmp/dpkg.log 2>&1; echo "code dpkg : $?"
 dpkg -s xfce-personnaliser | grep -E '^(Status|Version)'
 
 etape "2. Commandes et menu"
-for c in bureau-reglages bureau-profil bureau-wm fond-anime relancer-picom bureau-modeles fond-anime-fond; do
+for c in bureau-reglages bureau-profil bureau-wm fond-anime relancer-picom bureau-modeles fond-anime-fond rendu-logiciel; do
     printf "%-16s -> %s\n" "$c" "$(readlink -f "$(command -v "$c")")"
+done
+for c in fond-anime-video fond-anime-icones; do  # internes : lancées par fond-anime seulement
+    printf "%-17s : %s\n" "$c" "$(command -v "$c" || echo "pas dans le PATH (commande interne)")"
 done
 desktop-file-validate /usr/share/applications/bureau-reglages.desktop 2>/dev/null && echo "entrée du menu : valide" || ls -l /usr/share/applications/bureau-reglages.desktop
 
@@ -31,7 +34,7 @@ en_essai fond-anime /nexiste.mp4; echo "code $?"
 en_essai fond-anime auto on; grep '^Exec' $MAISON/.config/autostart/fond-anime.desktop; en_essai fond-anime auto off
 # Fenêtre de type bureau du fond animé, sans xwinwrap (Xvfb, sans gestionnaire de fenêtres)
 en_essai xvfb-run -a bash -c '
-  fond-anime-video --type-bureau 320x200+0+0 -- sleep 3 & sleep 1.5
+  /usr/share/xfce-personnaliser/bin/fond-anime-video --type-bureau 320x200+0+0 -- sleep 3 & sleep 1.5
   xprop -name fond-anime WM_CLASS _NET_WM_WINDOW_TYPE _NET_WM_STATE _NET_WM_DESKTOP WM_HINTS
   wait $!; echo "code fond-anime-video --type-bureau : $?"'
 

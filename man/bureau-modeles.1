@@ -1,0 +1,74 @@
+.\" -*- coding: UTF-8 -*-
+.\" Page de manuel de bureau-modeles (XfcePersonnaliser), licence GPL-3.0-or-later
+.TH BUREAU-MODELES 1 "novembre 2026" "XfcePersonnaliser" "Commandes de l'utilisateur"
+.nh
+.SH NOM
+bureau-modeles \- met en place les réglages de départ d'XfcePersonnaliser qui manquent
+.SH SYNOPSIS
+.B bureau-modeles
+.SH DESCRIPTION
+.B bureau-modeles
+copie dans le dossier de configuration de l'utilisateur les modèles du projet qui manquent
+encore : configuration de picom, shader du fond animé, style du Alt+Tab, entrées de
+démarrage et profils d'exemple. Un fichier déjà présent n'est jamais écrasé. La commande
+affiche une ligne
+.B Ajouté :
+par fichier mis en place, et rien s'il n'y a rien à faire.
+.PP
+L'interface
+.BR bureau-reglages (1)
+la lance à son ouverture,
+.BR fond-anime (1)
+quand
+.I picom.conf
+manque, et
+.I installer.sh
+à l'installation depuis le dossier du projet. On peut aussi la lancer à la main, par exemple
+pour retrouver un réglage de départ après avoir supprimé le sien.
+.SH FICHIERS
+.TP
+.I ~/.config/picom/picom.conf
+Réglages de picom 12 : ombres, coins arrondis, animations et règles. En rendu OpenGL
+logiciel (voir
+.BR rendu-logiciel (1)),
+picom y est réglé en xrender plutôt qu'en glx.
+.TP
+.I ~/.config/picom/fond-anime.glsl
+Shader du fond animé.
+.TP
+.I ~/.config/gtk-3.0/gtk.css.desactive
+Style du Alt+Tab, désactivé : l'interface l'allume. Il n'est pas mis si un
+.I gtk.css
+existe déjà.
+.TP
+.I ~/.config/autostart/picom.desktop
+Lance picom à l'ouverture de session ; désactivé si picom ne tourne pas déjà pour ce compte.
+.TP
+.I ~/.config/autostart/compiz.desktop
+Lance Compiz à l'ouverture de session ; désactivé hors du mode Compiz de
+.BR bureau-wm (1).
+.TP
+.IR ~/.config/bureau-profils/sombre ", " ~/.config/bureau-profils/clair
+Profils d'exemple, qui ne changent que l'apparence. Ils ne sont mis qu'au tout premier
+lancement : un dossier de profils déjà là n'est pas touché, et un exemple supprimé ne
+revient pas.
+.TP
+.I /usr/share/xfce-personnaliser/config/
+Les modèles, installés par le paquet Debian ; depuis le dossier du projet, c'est son dossier
+.IR config/ .
+.SH ENVIRONNEMENT
+.TP
+.B XDG_CONFIG_HOME
+Remplace
+.I ~/.config
+s'il est défini.
+.SH "CODE DE RETOUR"
+0, même quand il n'y avait rien à ajouter ; 1 si un argument est donné (la commande n'en
+prend pas).
+.SH "VOIR AUSSI"
+.BR bureau-reglages (1),
+.BR bureau-profil (1),
+.BR bureau-wm (1),
+.BR fond-anime (1),
+.BR rendu-logiciel (1),
+.BR picom (1)
